@@ -501,9 +501,10 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                     colorized = av_clip(colorized, 0, 255);
                     // colorized is lowest at the top and highest at the bottom, goes from 0 to 255
                     uint8_t color[4];
-                    color[0] = av_clip((255 - colorized) * 2.5, 0, 255);
-                    color[1] = av_clip((colorized - 96) * 2 * (255 / (255 - 96.0f)), 0, 255);
-                    color[2] = 0;
+                    color[0] = av_clip((255 - colorized) * 2.5, 1, 255);
+                    color[1] = av_clip((colorized - 96) * 2 * (255 / (255 - 96.0f)), 1, 255);
+                    color[2] = 1;
+                    // make sure no channel is at 0 so we can easily color key if we need to
 
                     draw_dot(out, cur_x, cur_y, color);
                 }
