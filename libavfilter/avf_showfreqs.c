@@ -34,10 +34,12 @@
 #include "internal.h"
 #include "window_func.h"
 
-enum DisplayMode    { LINE, BAR, DOT, NB_MODES };
+enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
+
+#define NB_BANDS 20
 
 typedef struct ShowFreqsContext {
     const AVClass *class;
@@ -61,6 +63,8 @@ typedef struct ShowFreqsContext {
     char *colors;
     AVAudioFifo *fifo;
     int64_t pts;
+    double heights[NB_BANDS];
+    double velocities[NB_BANDS];
 } ShowFreqsContext;
 
 #define OFFSET(x) offsetof(ShowFreqsContext, x)
@@ -73,6 +77,7 @@ static const AVOption showfreqs_options[] = {
         { "line", "show lines",  0, AV_OPT_TYPE_CONST, {.i64=LINE},   0, 0, FLAGS, "mode" },
         { "bar",  "show bars",   0, AV_OPT_TYPE_CONST, {.i64=BAR},    0, 0, FLAGS, "mode" },
         { "dot",  "show dots",   0, AV_OPT_TYPE_CONST, {.i64=DOT},    0, 0, FLAGS, "mode" },
+        { "twentybands", "20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=TWENTYBANDS}, 0, 0, FLAGS, "mode" },
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -209,6 +214,9 @@ static int config_output(AVFilterLink *outlink)
     /* pre-calc windowing function */
     s->window_func_lut = av_realloc_f(s->window_func_lut, s->win_size,
                                       sizeof(*s->window_func_lut));
+
+    av_log(ctx, AV_LOG_WARNING, "Using window size %d\n", s->win_size);
+
     if (!s->window_func_lut)
         return AVERROR(ENOMEM);
     ff_generate_window_func(s->window_func_lut, s->win_size, s->win_func, &overlap);
@@ -405,22 +413,116 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
         return AVERROR(ENOMEM);
     }
 
-    for (ch = 0; ch < s->nb_channels; ch++) {
-        uint8_t fg[4] = { 0xff, 0xff, 0xff, 0xff };
-        int prev_y = -1, f;
-        double a;
+    uint8_t fg[4] = {0xff, 0xff, 0xff, 0xff};
+    color = av_strtok(ch == 0 ? colors : NULL, " |", &saveptr);
+    if (color)
+        av_parse_color(fg, color, -1, ctx);
 
-        color = av_strtok(ch == 0 ? colors : NULL, " |", &saveptr);
-        if (color)
-            av_parse_color(fg, color, -1, ctx);
+    if (s->mode == TWENTYBANDS) {
+        const unsigned xscale[] = {0,1,2,3,4,5,6,7,8,11,15,20,27,
+                                   36,47,62,82,107,141,184,255};
+        float bar_size = s->w / (float)NB_BANDS;
 
-        a = av_clipd(M(RE(0, ch), 0) / s->scale, 0, 1);
-        plot_freq(s, ch, a, 0, fg, &prev_y, out, outlink);
+        int i = 0;
+        int j = 0;
+        for (i = 0; i < NB_BANDS; i++) {
+            double y = 0;
 
-        for (f = 1; f < s->nb_freq; f++) {
-            a = av_clipd(M(RE(f, ch), IM(f, ch)) / s->scale, 0, 1);
+            // find the peaks in the different bands
+            for (j = xscale[i]; j < xscale[i + 1]; j++) {
+                for (ch = 0; ch < s->nb_channels; ch++) {
+                    double a = av_clipd(M(RE(j, ch), IM(j, ch)) / s->scale, 0, 1);
+                    if (a > y) {
+                        y = a;
+                    }
+                }
+            }
 
-            plot_freq(s, ch, a, f, fg, &prev_y, out, outlink);
+            // gradual falling:
+            /*
+            s->heights[i] -= 0.01;
+            if (y > s->heights[i])
+                s->heights[i] = y;
+                */
+
+            // averaging to make it more friendly:
+            /*
+            s->heights[i] = (s->heights[i] + y) / 2;
+             */
+
+            // Getting it onto a more moving scale
+            if (y == 0)
+                y = 0;
+            else
+                y = av_clipf(logf((float)y * 256.0f) / 8.0f, 0, 1);
+
+            // Making it centered and less drastic
+//            y = (y * 0.5f) + 0.25f;
+
+            // Making it less drastic, giving it some kind of velocity
+            double velocity = 0;
+            double old_velocity = s->velocities[i];
+            double old_height = s->heights[i];
+//            if (s->heights[i] < 0.000001)
+//                velocity = y;
+
+
+//            if (old_height < 0.000001) // initial frame
+//                velocity = y;
+//            else {
+                double diff = y - s->heights[i];
+
+//                velocity = FFSIGN(diff) * 0.01;
+//
+//                if (fabs(diff) < fabs(velocity)) {
+//                    velocity = diff;
+//                }
+            velocity = FFSIGN(diff) * pow(diff, 2.0);
+
+                if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
+                    velocity = velocity * 0.1;
+                }
+//            }
+
+            s->velocities[i] = velocity;
+            s->heights[i] += velocity;
+            s->heights[i] = av_clipd(s->heights[i], 0, 1);
+
+            float start_x = bar_size * i;
+            float end_x = start_x + bar_size;
+            int cur_x = 0;
+            const double max_y = (1 - s->heights[i]) * outlink->h;
+            for (cur_x = (int) start_x; cur_x < (int) end_x; cur_x++) {
+                // trying to convert the fft result into a thing we can plot
+                // 0 was "ch"
+                int cur_y = 0;
+                for (cur_y = (int)max_y; cur_y < outlink->h; cur_y++) {
+                    int colorized = (int) (((float)cur_y / outlink->h) * 256);
+                    colorized = av_clip(colorized, 0, 255);
+                    // colorized is lowest at the top and highest at the bottom, goes from 0 to 255
+                    uint8_t color[4];
+                    color[0] = av_clip((255 - colorized) * 2.5, 0, 255);
+                    color[1] = av_clip((colorized - 96) * 2 * (255 / (255 - 96.0f)), 0, 255);
+                    color[2] = 0;
+
+                    draw_dot(out, cur_x, cur_y, color);
+                }
+            }
+        }
+    } else {
+        for (ch = 0; ch < s->nb_channels; ch++) {
+
+            int prev_y = -1, f;
+            double a;
+
+            a = av_clipd(M(RE(0, ch), 0) / s->scale, 0, 1);
+            plot_freq(s, ch, a, 0, fg, &prev_y, out, outlink);
+
+            for (f = 1; f < s->nb_freq; f++) {
+                a = av_clipd(M(RE(f, ch), IM(f, ch)) / s->scale, 0, 1);
+
+                plot_freq(s, ch, a, f, fg, &prev_y, out, outlink);
+            }
         }
     }
 
