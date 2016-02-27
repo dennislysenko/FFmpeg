@@ -65,6 +65,7 @@ typedef struct ShowFreqsContext {
     int64_t pts;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
+    FILE *bands_output;
 } ShowFreqsContext;
 
 #define OFFSET(x) offsetof(ShowFreqsContext, x)
@@ -185,6 +186,11 @@ static int config_output(AVFilterLink *outlink)
         av_log(ctx, AV_LOG_ERROR, "Unable to create FFT context. "
                "The window size might be too high.\n");
         return AVERROR(ENOMEM);
+    }
+
+    if (s->bands_output != NULL) {
+        fclose(s->bands_output);
+        s->bands_output = NULL;
     }
 
     /* FFT buffers: x2 for each (display) channel buffer.
@@ -376,6 +382,25 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     AVFrame *out;
     int ch, n;
 
+    if (s->bands_output == NULL) {
+        // clear bands data file
+        FILE *file = fopen("/tmp/bands.txt", "w");
+
+        if (file == NULL) {
+            av_log(ctx, AV_LOG_ERROR, "Could not open bands file for writing\n");
+        } else {
+            fclose(file);
+
+            av_log(ctx, AV_LOG_DEBUG, "Truncated/created bands file\n");
+
+            // and open it for appending (to the empty one)
+            s->bands_output = fopen("/tmp/bands.txt", "a");
+            if (s->bands_output == NULL) {
+                av_log(ctx, AV_LOG_ERROR, "Could not open bands file for appending\n");
+            }
+        }
+    }
+
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
         return AVERROR(ENOMEM);
@@ -450,6 +475,12 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             s->heights[i] = (s->heights[i] + y) / 2;
              */
 
+            if (s->bands_output != NULL) {
+                fprintf(s->bands_output, "%0.3f ", av_clipd(y, 0, 0.5f) / 0.5f);
+            } else {
+                av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
+            }
+
             // Getting it onto a more moving scale
             if (y == 0)
                 y = 0;
@@ -509,6 +540,12 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                     draw_dot(out, cur_x, cur_y, color);
                 }
             }
+        }
+
+        if (s->bands_output != NULL) {
+            fprintf(s->bands_output, "\n");
+        } else {
+            av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
         }
     } else {
         for (ch = 0; ch < s->nb_channels; ch++) {
