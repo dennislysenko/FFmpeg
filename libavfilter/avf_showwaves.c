@@ -39,6 +39,7 @@ enum ShowWavesMode {
     MODE_LINE,
     MODE_P2P,
     MODE_CENTERED_LINE,
+    MODE_THICK_P2P,
     MODE_NB,
 };
 
@@ -91,6 +92,7 @@ static const AVOption showwaves_options[] = {
         { "point", "draw a point for each sample",         0, AV_OPT_TYPE_CONST, {.i64=MODE_POINT},         .flags=FLAGS, .unit="mode"},
         { "line",  "draw a line for each sample",          0, AV_OPT_TYPE_CONST, {.i64=MODE_LINE},          .flags=FLAGS, .unit="mode"},
         { "p2p",   "draw a line between samples",          0, AV_OPT_TYPE_CONST, {.i64=MODE_P2P},           .flags=FLAGS, .unit="mode"},
+        { "thick",   "draw a thick line between samples",  0, AV_OPT_TYPE_CONST, {.i64=MODE_THICK_P2P},           .flags=FLAGS, .unit="mode"},
         { "cline", "draw a centered line for each sample", 0, AV_OPT_TYPE_CONST, {.i64=MODE_CENTERED_LINE}, .flags=FLAGS, .unit="mode"},
     { "n",    "set how many samples to show in the same point", OFFSET(n), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS },
     { "rate", "set video rate", OFFSET(rate), AV_OPT_TYPE_VIDEO_RATE, {.str = "25"}, 0, 0, FLAGS },
@@ -207,6 +209,42 @@ static void draw_sample_line_rgba(uint8_t *buf, int height, int linesize,
     }
 }
 
+static void draw_sample_thick_rgba(uint8_t *buf, int height, int linesize,
+                                 int16_t *prev_y,
+                                 const uint8_t color[4], int h)
+{
+    int k;
+    int minH;
+    int maxH;
+    int y;
+
+    if (h >= 0 && h < height) {
+        minH = av_clip(h - 3, 0, height-1);
+        maxH = av_clip(h + 3, 0, height-1);
+
+        for (y = minH; y < maxH; y++) {
+            buf[y * linesize + 0] += color[0];
+            buf[y * linesize + 1] += color[1];
+            buf[y * linesize + 2] += color[2];
+            buf[y * linesize + 3] += color[3];
+        }
+
+        if (*prev_y && h != *prev_y) {
+            int start = *prev_y;
+            int end = av_clip(h, 0, height - 1);
+            if (start > end)
+                FFSWAP(int16_t, start, end);
+            for (k = start + 1; k < end; k++) {
+                buf[k * linesize + 0] += color[0];
+                buf[k * linesize + 1] += color[1];
+                buf[k * linesize + 2] += color[2];
+                buf[k * linesize + 3] += color[3];
+            }
+        }
+    }
+    *prev_y = h;
+}
+
 static void draw_sample_p2p_rgba(uint8_t *buf, int height, int linesize,
                                  int16_t *prev_y,
                                  const uint8_t color[4], int h)
@@ -288,6 +326,36 @@ static void draw_sample_p2p_gray(uint8_t *buf, int height, int linesize,
     *prev_y = h;
 }
 
+static void draw_sample_thick_gray(uint8_t *buf, int height, int linesize,
+                                   int16_t *prev_y,
+                                   const uint8_t color[4], int h)
+{
+    int k;
+    int minH;
+    int maxH;
+    int y;
+
+    if (h >= 0 && h < height) {
+        minH = av_clip(h - 3, 0, height-1);
+        maxH = av_clip(h + 3, 0, height-1);
+
+        for (y = minH; y < maxH; y++) {
+            buf[y * linesize] += color[0];
+        }
+
+//        if (*prev_y && h != *prev_y) {
+//            int start = *prev_y;
+//            int end = av_clip(h, 0, height - 1);
+//            if (start > end)
+//                FFSWAP(int16_t, start, end);
+//            for (k = start + 1; k < end; k++) {
+//                buf[k * linesize] += color[0];
+//            }
+//        }
+    }
+    *prev_y = h;
+}
+
 static void draw_sample_cline_gray(uint8_t *buf, int height, int linesize,
                                    int16_t *prev_y,
                                    const uint8_t color[4], int h)
@@ -336,6 +404,7 @@ static int config_output(AVFilterLink *outlink)
         case MODE_POINT:         showwaves->draw_sample = draw_sample_point_gray; break;
         case MODE_LINE:          showwaves->draw_sample = draw_sample_line_gray;  break;
         case MODE_P2P:           showwaves->draw_sample = draw_sample_p2p_gray;   break;
+        case MODE_THICK_P2P:     showwaves->draw_sample = draw_sample_thick_gray;   break;
         case MODE_CENTERED_LINE: showwaves->draw_sample = draw_sample_cline_gray; break;
         default:
             return AVERROR_BUG;
@@ -347,6 +416,7 @@ static int config_output(AVFilterLink *outlink)
         case MODE_POINT:         showwaves->draw_sample = draw_sample_point_rgba; break;
         case MODE_LINE:          showwaves->draw_sample = draw_sample_line_rgba;  break;
         case MODE_P2P:           showwaves->draw_sample = draw_sample_p2p_rgba;   break;
+        case MODE_THICK_P2P:           showwaves->draw_sample = draw_sample_thick_rgba;   break;
         case MODE_CENTERED_LINE: showwaves->draw_sample = draw_sample_cline_rgba; break;
         default:
             return AVERROR_BUG;
@@ -360,7 +430,8 @@ static int config_output(AVFilterLink *outlink)
         switch (showwaves->mode) {
         case MODE_POINT:
         case MODE_LINE:
-        case MODE_P2P:           showwaves->get_h = get_lin_h;  break;
+        case MODE_P2P:
+        case MODE_THICK_P2P:     showwaves->get_h = get_lin_h;  break;
         case MODE_CENTERED_LINE: showwaves->get_h = get_lin_h2; break;
         default:
             return AVERROR_BUG;
@@ -370,7 +441,8 @@ static int config_output(AVFilterLink *outlink)
         switch (showwaves->mode) {
         case MODE_POINT:
         case MODE_LINE:
-        case MODE_P2P:           showwaves->get_h = get_log_h;  break;
+        case MODE_P2P:
+        case MODE_THICK_P2P:     showwaves->get_h = get_log_h;  break;
         case MODE_CENTERED_LINE: showwaves->get_h = get_log_h2; break;
         default:
             return AVERROR_BUG;
