@@ -591,7 +591,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                 frame->ngenomes = 1;
                 frame->verbose = 0;
                 // TODO sizes under the 480x360 might be very weird/wrong in the visualization
-                frame->bits = 33;
+                frame->bits = 64;
                 frame->bytes_per_channel = 1;
                 frame->earlyclip = 0;
                 frame->time = 0.0;
