@@ -36,6 +36,67 @@
 #include "window_func.h"
 #include "flam3.h"
 
+#define FLAM3_STRINGIFY(x) #x
+char FLAM3_WREATH[] = FLAM3_STRINGIFY(
+<flame name="wreath" version="Apophysis 2.09" size="480 360" center="0 0" scale="480" oversample="1" filter="0.2" quality="5" background="0 0 0" brightness="10.6913043478261" gamma="2.44" gamma_threshold="0.11" >
+        <xform weight="16" color="0" opacity="0" diamond="1" coefs="1.061489 0 0.994422 1.074955 0 0" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 1 0" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.951057 0.309017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.809017 0.587785" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.587785 0.809017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.309017 0.951057" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0 1" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.309017 0.951057" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.587785 0.809017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.809017 0.587785" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.951057 0.309017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -1 0" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.951057 -0.309017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.809017 -0.587785" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.587785 -0.809017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 -0.309017 -0.951057" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0 -1" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.309017 -0.951057" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.587785 -0.809017" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.809017 -0.587785" />
+        <xform weight="0.5" color="1" linear="0.25" coefs="1 0 0 1 0.951057 -0.309017" />
+        <palette count="256" format="RGB">
+        9007BB97039F9B176E9F2C3D8D41287C57138667278F7914
+        96851197871099891095850F92810F907F0F8F7D0F746B0C
+        70630D6C5C0E665809605505625506655507655A0A6B5C07
+        6B5A0C735D0C7B610D76610B716109726604735E036E6008
+        786908837208968B08A9A408A3AE049EB80087DD1C9ACF0F
+        A89B008F82047669097166066D63045D70002C6C150BAE79
+        1A9F6D2A91623D8944508126837C389F7F2CDC9624D4CF2D
+        DFBB1FC3A41DA88D1CA48E20A190249E89149E8A1198850F
+        93800E8E7C0E86750E7F6F0F7161096165113F6D2C10884A
+        008867018A4A038D2E0C98153D870047970233900E0C8D79
+        1A8066287354385E3D484927635A0B665706675805675805
+        695B036D5C01725D008065008A77008F7B0B8E7C0C7C680F
+        6B7D1F5A922F579640549A5233E43E0DEB0A1CCB024A9E08
+        8C74148E7A1191800E95810E907F0D8E7C0E7A65125C5D0F
+        445B142C5A1A10724113AC6C00CC8701FBA210E3AE11D38A
+        38D41135BD0833A60067A70074B3048190007E6B04756900
+        8071058C7A0A8F7D0F907F0D907E1089760F7D68157E571E
+        98151A8814147127246C451A69570D675C0A6A5B08695609
+        6956086956076A5B067556037154126F2C02594602504600
+        594A055E500062560A5050063250080C7D001D89112A8317
+        4A821D4D7B0F60600A655D0A74640D7A703279763F588193
+        37A5C05F99FF2C4DC16A28C8871CDCC109F3E724FEE512DD
+        F9079ABF0064F46B27FB8A2AFAE20CFAFF26DBFF33AAEE29
+        9CE60DAE9C12A3950E9E8A119C87109B881098850F96870A
+        928D0F96850F877C097C8109659A3244B55B32F37C55EE79
+        47CB5383DA1CB0BF26D1B925C3B971C8BC72E17E9DF7177A
+        C06425A6721FA367009A721D807B2A9F934B57DDFF44C1DD
+        33F2FF30F1D02EF1A22BF66029FB1E19DF2009C32200E261
+        00E49F00E7DD00C7C900A8B53A6D8275334F7F203D890E2B
+        C60732D9132EED1F2BC333159947007F35126523242F7082
+        3B899947A3B02399A5008F9A027B900568872D44707E089D
+        CC04BEDF12CEF221DEDB20CDC51FBDB816CDAC0EDD8A0BD8
+        </palette>
+</flame>
+);
+
 enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, FLAM3, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
@@ -67,7 +128,7 @@ typedef struct ShowFreqsContext {
     int64_t pts;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
-    FILE *bands_output;
+//    FILE *bands_output;
     flam3_frame *frame;
     flam3_genome *cps; // todo free this appropriately
     int cps_counter;
@@ -195,10 +256,10 @@ static int config_output(AVFilterLink *outlink)
         return AVERROR(ENOMEM);
     }
 
-    if (s->bands_output != NULL) {
-        fclose(s->bands_output);
-        s->bands_output = NULL;
-    }
+//    if (s->bands_output != NULL) {
+//        fclose(s->bands_output);
+//        s->bands_output = NULL;
+//    }
 
     /* FFT buffers: x2 for each (display) channel buffer.
      * Note: we use free and malloc instead of a realloc-like function to
@@ -389,24 +450,24 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     AVFrame *out;
     int ch, n;
 
-    if (s->bands_output == NULL) {
-        // clear bands data file
-        FILE *file = fopen("/tmp/bands.txt", "w");
-
-        if (file == NULL) {
-            av_log(ctx, AV_LOG_ERROR, "Could not open bands file for writing\n");
-        } else {
-            fclose(file);
-
-            av_log(ctx, AV_LOG_DEBUG, "Truncated/created bands file\n");
-
-            // and open it for appending (to the empty one)
-            s->bands_output = fopen("/tmp/bands.txt", "a");
-            if (s->bands_output == NULL) {
-                av_log(ctx, AV_LOG_ERROR, "Could not open bands file for appending\n");
-            }
-        }
-    }
+//    if (s->bands_output == NULL) {
+//        // clear bands data file
+//        FILE *file = fopen("/tmp/bands.txt", "w");
+//
+//        if (file == NULL) {
+//            av_log(ctx, AV_LOG_ERROR, "Could not open bands file for writing\n");
+//        } else {
+//            fclose(file);
+//
+//            av_log(ctx, AV_LOG_DEBUG, "Truncated/created bands file\n");
+//
+//            // and open it for appending (to the empty one)
+//            s->bands_output = fopen("/tmp/bands.txt", "a");
+//            if (s->bands_output == NULL) {
+//                av_log(ctx, AV_LOG_ERROR, "Could not open bands file for appending\n");
+//            }
+//        }
+//    }
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
@@ -455,15 +516,16 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             flam3_frame *frame = malloc(sizeof(flam3_frame));
             frame->pixel_aspect_ratio = 1;
             int ncps;
-            FILE *flame_handle = fopen("/Users/dennis/dev/flam3/test.flam3", "r");
-
-            if (flame_handle == NULL) {
-                av_log(ctx, AV_LOG_ERROR, "flame handle file was invalid, please make sure it exists\n");
-            }
-            s->cps = flam3_parse_from_file(flame_handle, NULL, flam3_defaults_on, &ncps);
+//            FILE *flame_handle = fopen("/Users/dennis/dev/flam3/test.flam3", "r");
+//
+//            if (flame_handle == NULL) {
+//                av_log(ctx, AV_LOG_ERROR, "flame handle file was invalid, please make sure it exists\n");
+//            }
+//            s->cps = flam3_parse_from_file(flame_handle, NULL, flam3_defaults_on, &ncps);
+            s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &ncps);
             s->ncps = ncps;
 
-            fclose(flame_handle);
+//            fclose(flame_handle);
 
             frame->ngenomes = 1;
             frame->verbose = 1;
@@ -525,11 +587,11 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             s->heights[i] = (s->heights[i] + y) / 2;
              */
 
-            if (s->bands_output != NULL) {
-                fprintf(s->bands_output, "%0.3f ", av_clipd(y, 0, 0.5f) / 0.5f);
-            } else {
-                av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
-            }
+//            if (s->bands_output != NULL) {
+//                fprintf(s->bands_output, "%0.3f ", av_clipd(y, 0, 0.5f) / 0.5f);
+//            } else {
+//                av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
+//            }
 
             // Getting it onto a more moving scale
             if (y == 0)
@@ -592,11 +654,11 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             }
         }
 
-        if (s->bands_output != NULL) {
-            fprintf(s->bands_output, "\n");
-        } else {
-            av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
-        }
+//        if (s->bands_output != NULL) {
+//            fprintf(s->bands_output, "\n");
+//        } else {
+//            av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
+//        }
     } else {
         for (ch = 0; ch < s->nb_channels; ch++) {
 
