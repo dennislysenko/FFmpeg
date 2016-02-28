@@ -511,51 +511,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     if (color)
         av_parse_color(fg, color, -1, ctx);
 
-    if (s->mode == FLAM3) {
-        if (s->frame == NULL) {
-            flam3_frame *frame = malloc(sizeof(flam3_frame));
-            frame->pixel_aspect_ratio = 1;
-            int ncps;
-//            FILE *flame_handle = fopen("/Users/dennis/dev/flam3/test.flam3", "r");
-//
-//            if (flame_handle == NULL) {
-//                av_log(ctx, AV_LOG_ERROR, "flame handle file was invalid, please make sure it exists\n");
-//            }
-//            s->cps = flam3_parse_from_file(flame_handle, NULL, flam3_defaults_on, &ncps);
-            s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &ncps);
-            s->ncps = ncps;
-
-//            fclose(flame_handle);
-
-            frame->ngenomes = 1;
-            frame->verbose = 1;
-            // 480x360
-            frame->bits = 33;
-            frame->bytes_per_channel = 1;
-            frame->earlyclip = 0;
-            frame->time = 0.0;
-            frame->progress = 0;
-            frame->nthreads = 1;
-            frame->sub_batch_size = 10000;
-
-            s->frame = frame;
-        }
-
-        // go to the next flame in the render, but wrap around to zero so we don't go out of bounds.
-        s->cps_counter++;
-        s->cps_counter %= s->ncps;
-
-        // and load that flame into the frame
-        s->frame->genomes = &s->cps[s->cps_counter];
-
-        av_log(ctx, AV_LOG_INFO, "using flame #%d\n", s->cps_counter);
-        av_log(ctx, AV_LOG_INFO, "estimated memory %f\n", flam3_render_memory_required(s->frame));
-        stat_struct stats;
-        flam3_render(s->frame, out->data[0], flam3_field_both, 4, 0, &stats);
-        av_log(ctx, AV_LOG_INFO, "badvals=%0.3f, num_iters=%ld, render_seconds=%d\n", stats.badvals, stats.num_iters, stats.render_seconds);
-    } else if (s->mode == TWENTYBANDS) {
-        av_log(ctx, AV_LOG_DEBUG, "doing twentybands\n");
-
+    if (s->mode == FLAM3 || s->mode == TWENTYBANDS) {
         const unsigned xscale[] = {0,1,2,3,4,5,6,7,8,11,15,20,27,
                                    36,47,62,82,107,141,184,255};
         float bar_size = s->w / (float)NB_BANDS;
@@ -613,7 +569,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 //            if (old_height < 0.000001) // initial frame
 //                velocity = y;
 //            else {
-                double diff = y - s->heights[i];
+            double diff = y - s->heights[i];
 
 //                velocity = FFSIGN(diff) * 0.01;
 //
@@ -622,37 +578,101 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 //                }
             velocity = FFSIGN(diff) * pow(diff, 2.0);
 
-                if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
-                    velocity = velocity * 0.1;
-                }
+            if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
+                velocity = velocity * 0.1;
+            }
 //            }
 
             s->velocities[i] = velocity;
             s->heights[i] += velocity;
             s->heights[i] = av_clipd(s->heights[i], 0, 1);
 
-            float start_x = bar_size * i;
-            float end_x = start_x + bar_size;
-            int cur_x = 0;
-            const double max_y = (1 - s->heights[i]) * outlink->h;
-            for (cur_x = (int) start_x; cur_x < (int) end_x; cur_x++) {
-                // trying to convert the fft result into a thing we can plot
-                // 0 was "ch"
-                int cur_y = 0;
-                for (cur_y = (int)max_y; cur_y < outlink->h; cur_y++) {
-                    int colorized = (int) (((float)cur_y / outlink->h) * 256);
-                    colorized = av_clip(colorized, 0, 255);
-                    // colorized is lowest at the top and highest at the bottom, goes from 0 to 255
-                    uint8_t color[4];
-                    color[0] = av_clip((255 - colorized) * 2.5, 20, 255);
-                    color[1] = av_clip((colorized - 96) * 2 * (255 / (255 - 96.0f)), 20, 255);
-                    color[2] = 20;
-                    // make sure no channel is at 0 so we can easily color key if we need to (thus all the 20s)
+            if (s->mode == TWENTYBANDS) {
+                // if running twentybands, render the bar
+                float start_x = bar_size * i;
+                float end_x = start_x + bar_size;
+                int cur_x = 0;
+                const double max_y = (1 - s->heights[i]) * outlink->h;
+                for (cur_x = (int) start_x; cur_x < (int) end_x; cur_x++) {
+                    // trying to convert the fft result into a thing we can plot
+                    // 0 was "ch"
+                    int cur_y = 0;
+                    for (cur_y = (int) max_y; cur_y < outlink->h; cur_y++) {
+                        int colorized = (int) (((float) cur_y / outlink->h) * 256);
+                        colorized = av_clip(colorized, 0, 255);
+                        // colorized is lowest at the top and highest at the bottom, goes from 0 to 255
+                        uint8_t color[4];
+                        color[0] = av_clip((255 - colorized) * 2.5, 20, 255);
+                        color[1] = av_clip((colorized - 96) * 2 * (255 / (255 - 96.0f)), 20, 255);
+                        color[2] = 20;
+                        // make sure no channel is at 0 so we can easily color key if we need to (thus all the 20s)
 
-                    draw_dot(out, cur_x, cur_y, color);
+                        draw_dot(out, cur_x, cur_y, color);
+                    }
                 }
             }
         }
+
+        if (s->mode == FLAM3) {
+            if (s->frame == NULL) {
+                flam3_frame *frame = malloc(sizeof(flam3_frame));
+                frame->pixel_aspect_ratio = 1;
+                int ncps;
+//            FILE *flame_handle = fopen("/Users/dennis/dev/flam3/test.flam3", "r");
+//
+//            if (flame_handle == NULL) {
+//                av_log(ctx, AV_LOG_ERROR, "flame handle file was invalid, please make sure it exists\n");
+//            }
+//            s->cps = flam3_parse_from_file(flame_handle, NULL, flam3_defaults_on, &ncps);
+                s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &ncps);
+                s->ncps = ncps;
+
+//            fclose(flame_handle);
+
+                frame->ngenomes = 1;
+                frame->verbose = 1;
+                // 480x360
+                frame->bits = 33;
+                frame->bytes_per_channel = 1;
+                frame->earlyclip = 0;
+                frame->time = 0.0;
+                frame->progress = 0;
+                frame->nthreads = 1;
+                frame->sub_batch_size = 10000;
+
+                s->frame = frame;
+            }
+
+            // go to the next flame in the render, but wrap around to zero so we don't go out of bounds.
+            s->cps_counter++;
+            s->cps_counter %= s->ncps;
+
+            flam3_genome* genome = &s->cps[s->cps_counter];
+//            for (int xform_index = 0; xform_index < genome->num_xforms; xform_index++) {
+//                for (int var_index = 0; var_index < 12; var_index++) {
+//                    av_log(ctx, AV_LOG_INFO, "xform %d var %d = %0.2f\n", xform_index, var_index, genome->xform[xform_index].var[var_index]);
+//                }
+//            }
+
+            for (int band_index = 0; band_index < NB_BANDS && (band_index+1) < genome->num_xforms; band_index++) {
+                genome->xform[band_index + 1].var[0] = s->heights[band_index];
+            }
+            // and load that flame into the frame
+            s->frame->genomes = genome;
+
+
+
+            av_log(ctx, AV_LOG_INFO, "using flame #%d\n", s->cps_counter);
+            av_log(ctx, AV_LOG_INFO, "estimated memory %f\n", flam3_render_memory_required(s->frame));
+            stat_struct stats;
+            flam3_render(s->frame, out->data[0], flam3_field_both, 4, 0, &stats);
+            av_log(ctx, AV_LOG_INFO, "badvals=%0.3f, num_iters=%ld, render_seconds=%d\n", stats.badvals,
+                   stats.num_iters, stats.render_seconds);
+        }
+    } else if (s->mode == TWENTYBANDS) {
+        av_log(ctx, AV_LOG_DEBUG, "doing twentybands\n");
+
+
 
 //        if (s->bands_output != NULL) {
 //            fprintf(s->bands_output, "\n");
