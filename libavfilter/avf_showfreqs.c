@@ -19,6 +19,7 @@
  */
 
 #include <math.h>
+#include <flam3.h>
 
 #include "libavcodec/avfft.h"
 #include "libavutil/audio_fifo.h"
@@ -33,8 +34,9 @@
 #include "avfilter.h"
 #include "internal.h"
 #include "window_func.h"
+#include "flam3.h"
 
-enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, NB_MODES };
+enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, FLAM3, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
@@ -66,6 +68,10 @@ typedef struct ShowFreqsContext {
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
     FILE *bands_output;
+    flam3_frame *frame;
+    flam3_genome *cps; // todo free this appropriately
+    int cps_counter;
+    int ncps;
 } ShowFreqsContext;
 
 #define OFFSET(x) offsetof(ShowFreqsContext, x)
@@ -79,6 +85,7 @@ static const AVOption showfreqs_options[] = {
         { "bar",  "show bars",   0, AV_OPT_TYPE_CONST, {.i64=BAR},    0, 0, FLAGS, "mode" },
         { "dot",  "show dots",   0, AV_OPT_TYPE_CONST, {.i64=DOT},    0, 0, FLAGS, "mode" },
         { "twentybands", "20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=TWENTYBANDS}, 0, 0, FLAGS, "mode" },
+        { "flam3", "fractal flame", 0, AV_OPT_TYPE_CONST, {.i64=FLAM3}, 0, 0, FLAGS, "mode" },
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -443,7 +450,50 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     if (color)
         av_parse_color(fg, color, -1, ctx);
 
-    if (s->mode == TWENTYBANDS) {
+    if (s->mode == FLAM3) {
+        if (s->frame == NULL) {
+            flam3_frame *frame = malloc(sizeof(flam3_frame));
+            frame->pixel_aspect_ratio = 1;
+            int ncps;
+            FILE *flame_handle = fopen("/Users/dennis/dev/flam3/test.flam3", "r");
+
+            if (flame_handle == NULL) {
+                av_log(ctx, AV_LOG_ERROR, "flame handle file was invalid, please make sure it exists\n");
+            }
+            s->cps = flam3_parse_from_file(flame_handle, NULL, flam3_defaults_on, &ncps);
+            s->ncps = ncps;
+
+            fclose(flame_handle);
+
+            frame->ngenomes = 1;
+            frame->verbose = 1;
+            // 480x360
+            frame->bits = 33;
+            frame->bytes_per_channel = 1;
+            frame->earlyclip = 0;
+            frame->time = 0.0;
+            frame->progress = 0;
+            frame->nthreads = 1;
+            frame->sub_batch_size = 10000;
+
+            s->frame = frame;
+        }
+
+        // go to the next flame in the render, but wrap around to zero so we don't go out of bounds.
+        s->cps_counter++;
+        s->cps_counter %= s->ncps;
+
+        // and load that flame into the frame
+        s->frame->genomes = &s->cps[s->cps_counter];
+
+        av_log(ctx, AV_LOG_INFO, "using flame #%d\n", s->cps_counter);
+        av_log(ctx, AV_LOG_INFO, "estimated memory %f\n", flam3_render_memory_required(s->frame));
+        stat_struct stats;
+        flam3_render(s->frame, out->data[0], flam3_field_both, 4, 0, &stats);
+        av_log(ctx, AV_LOG_INFO, "badvals=%0.3f, num_iters=%ld, render_seconds=%d\n", stats.badvals, stats.num_iters, stats.render_seconds);
+    } else if (s->mode == TWENTYBANDS) {
+        av_log(ctx, AV_LOG_DEBUG, "doing twentybands\n");
+
         const unsigned xscale[] = {0,1,2,3,4,5,6,7,8,11,15,20,27,
                                    36,47,62,82,107,141,184,255};
         float bar_size = s->w / (float)NB_BANDS;
@@ -624,6 +674,10 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->avg_data);
     av_freep(&s->window_func_lut);
     av_audio_fifo_free(s->fifo);
+
+    if (s->frame != NULL) {
+        free(s->frame);
+    }
 }
 
 static const AVFilterPad showfreqs_inputs[] = {
