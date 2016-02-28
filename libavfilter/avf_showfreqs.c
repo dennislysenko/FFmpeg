@@ -101,6 +101,7 @@ enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, FLAM3, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
+enum Flame          { WREATH, NB_FLAMES };
 
 #define NB_BANDS 20
 
@@ -132,6 +133,7 @@ typedef struct ShowFreqsContext {
     flam3_genome *cps;
     //int cps_counter;
     int ncps;
+    int selected_flame;
 } ShowFreqsContext;
 
 #define OFFSET(x) offsetof(ShowFreqsContext, x)
@@ -146,6 +148,8 @@ static const AVOption showfreqs_options[] = {
         { "dot",  "show dots",   0, AV_OPT_TYPE_CONST, {.i64=DOT},    0, 0, FLAGS, "mode" },
         { "twentybands", "20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=TWENTYBANDS}, 0, 0, FLAGS, "mode" },
         { "flam3", "fractal flame", 0, AV_OPT_TYPE_CONST, {.i64=FLAM3}, 0, 0, FLAGS, "mode" },
+    { "flame", "set flam3 fractal flame", OFFSET(selected_flame), AV_OPT_TYPE_INT, {.i64=WREATH}, 0, NB_FLAMES-1, FLAGS, "flame" },
+        { "wreath", "shows a circle of triangles that pulsate with 20-band frequences",  0, AV_OPT_TYPE_CONST, {.i64=WREATH},   0, 0, FLAGS, "flame" },
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -586,7 +590,16 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             if (s->frame == NULL) {
                 flam3_frame *frame = malloc(sizeof(flam3_frame));
                 frame->pixel_aspect_ratio = outlink->sample_aspect_ratio.num / outlink->sample_aspect_ratio.den;
-                s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &s->ncps);
+
+                // Load the right flame xml based on the selected flame
+                switch (s->selected_flame) {
+                    case WREATH:
+                        s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &s->ncps);
+                        break;
+                        // write more cases here as you add them
+                    default:
+                        av_log(ctx, AV_LOG_ERROR, "unknown selected flame\n");
+                }
 
                 frame->ngenomes = 1;
                 frame->verbose = 0;
@@ -612,9 +625,16 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             genome->height = out->height;
             genome->pixels_per_unit = out->width;
 
-            for (int band_index = 0; band_index < NB_BANDS && (band_index+1) < genome->num_xforms; band_index++) {
-                genome->xform[band_index + 1].var[0] = s->heights[band_index];
+            // Apply the audio band effects to the flame
+            switch (s->selected_flame) {
+                case WREATH: {
+                    for (int band_index = 0;
+                         band_index < NB_BANDS && (band_index + 1) < genome->num_xforms; band_index++) {
+                        genome->xform[band_index + 1].var[0] = s->heights[band_index];
+                    }
+                }
             }
+
             // and load that flame into the frame
             s->frame->genomes = genome;
 
