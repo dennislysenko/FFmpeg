@@ -97,11 +97,52 @@ char FLAM3_WREATH[] = FLAM3_STRINGIFY(
 </flame>
 );
 
+char FLAM3_PABLO[] = FLAM3_STRINGIFY(
+<flame name="Apophysis-160228-1" version="apophysis-j 2.9" size="100 100" center="0.4276471112825241 -0.07366013392303089" scale="32.93691281813009" oversample="1" filter="0.2" quality="5.0" background="0.0 0.0 0.0" brightness="4.0" gamma="4.0" vibrancy="1.0" >
+        <xform weight="0.5" color="0.0" hyperbolic="0.04526427520602694" julia="0.9547357247939731" coefs="0.8577261877766948 0.1868437171181121 0.3308409593078538 0.8965508366269237 -0.31912619639074546 -0.3778000074350456"  />
+        <xform weight="0.5" color="1.0" diamond="0.3113785542626345" waves="0.6886214457373655" coefs="-0.48836921272647715 0.8480483375500903 -0.6943247204829344 -0.07213206882587403 0.7636392841390722 -0.6621535566142094"  />
+        <palette count="256" format="RGB">
+        894B0E624A2E5B5550546172404F602C3D4F24394E1C364D
+        51402E5F43276E47209B5917C86B0EBA7B3BAD8C69AA9174
+        A89680B3DBFFA4CDF496C0EA82BBF46FB7FF6AB8FF66BAFF
+        239DFF1D96FF1790FF2898FF39A0FF3D9CF84199F2379EFD
+        28A4FE1398FF1698FF1998FF31A3FF49AFFF56B4FF63BAFF
+        89CFFF90CFFE97CFFE83CBFD70C7FD6CC0FE69B9FF509EE9
+        116FC9014E960143850238741961A9318ADE4F9AE46EABEA
+        D2E8FDE8F3FDFFFFFDF9FBFEF4F7FFE0F2FFCDEEFFCBF3FB
+        C5F1FEC6EBFEA9D4F88CBEF381AFDE77A1C96E7683605041
+        111216092543013870014FA00166D0006EE00076F10089FF
+        027DFE0164CA014A980231670724470C1828000A16010916
+        21170D2F1E0D3E260E472D135035186E4319704319724317
+        794410774B1E7C5326815B2E8B7357958B817688966D90AE
+        47729C4C6B8A526478595C606155495E462A6A44174D3318
+        3D1E011F0F00180B00110801090400000000000000010101
+        00112B082C5410477D0F559A0F64B70A6FD70985FF2385E8
+        4496EA5591CF5888B95C80A45C758B373F4A252422120F0A
+        0201000100000000000000000000000704000C0800221101
+        321A00593C1E5D462D62503C71666262707B5E6E7D636260
+        40332A382E25312A201E1A191F2022012349003C760052A8
+        0069D6008BFF1291FF2498FF2FA2FF3AA8FF40AAFE46A0F8
+        2682D91F76C6186AB43065993E61813C41454D3318421F01
+        3E1C003A1A013519012C1702241100271201281A0D352817
+        3A3F453A434E3A47572B527B144677014B960657A8005BBA
+        0D6ACA2587E849A1FA70C6FF90D8FEB5E1FEBBECFDBDEAFD
+        BFE9FFC3E2FFC9F0FFE1F8FEFAFEFFE0F0FFCEE7FDB7DEFF
+        92D0FF66A9ED217FDF0066CD0352A10E38621E2F3F0E1116
+        00081501040D01040D00070F0A141E133455235C93236BB5
+        64A1DA77A9DC70A5DB6F93B78173686353446A421F46290B
+        401E023B1C00401F00532D067142167343126E4211462200
+        311700170B00080300000000000000000000000000070300
+        0B0602231C14322B23574D43666A6D7798BBBED6EE96B9DF
+        </palette>
+</flame>
+);
+
 enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, FLAM3, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
-enum Flame          { WREATH, NB_FLAMES };
+enum Flame          { WREATH, PABLO, NB_FLAMES };
 
 #define NB_BANDS 20
 
@@ -150,6 +191,7 @@ static const AVOption showfreqs_options[] = {
         { "flam3", "fractal flame", 0, AV_OPT_TYPE_CONST, {.i64=FLAM3}, 0, 0, FLAGS, "mode" },
     { "flame", "set flam3 fractal flame", OFFSET(selected_flame), AV_OPT_TYPE_INT, {.i64=WREATH}, 0, NB_FLAMES-1, FLAGS, "flame" },
         { "wreath", "shows a circle of triangles that pulsate with 20-band frequences",  0, AV_OPT_TYPE_CONST, {.i64=WREATH},   0, 0, FLAGS, "flame" },
+        { "pablo", "shows a circle of triangles that pulsate with 20-band frequences",  0, AV_OPT_TYPE_CONST, {.i64=PABLO},   0, 0, FLAGS, "flame" },
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -596,6 +638,9 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                     case WREATH:
                         s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &s->ncps);
                         break;
+                    case PABLO:
+                        s->cps = flam3_parse_xml2(FLAM3_PABLO, NULL, flam3_defaults_on, &s->ncps);
+                        break;
                         // write more cases here as you add them
                     default:
                         av_log(ctx, AV_LOG_ERROR, "unknown selected flame\n");
@@ -632,7 +677,31 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                          band_index < NB_BANDS && (band_index + 1) < genome->num_xforms; band_index++) {
                         genome->xform[band_index + 1].var[0] = s->heights[band_index];
                     }
+                    break;
                 }
+                case PABLO: {
+                    double lowmax = 0;
+                    double highmax = 0;
+                    for (int bi = 0; bi < NB_BANDS; bi++) {
+                        double height = s->heights[bi];
+                        if (bi <= NB_BANDS/2) {
+                            if (height > lowmax) {
+                                lowmax = height;
+                            }
+                        } else {
+                            if (height > highmax) {
+                                highmax = height;
+                            }
+                        }
+                    }
+
+                    genome->xform[0].var[13] = lowmax;
+                    genome->xform[0].var[10] = 1 - lowmax;
+
+                    genome->xform[1].var[15] = highmax;
+                    genome->xform[1].var[11] = 1 - highmax;
+                    break;
+                };
             }
 
             // and load that flame into the frame
