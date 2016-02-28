@@ -128,10 +128,9 @@ typedef struct ShowFreqsContext {
     int64_t pts;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
-//    FILE *bands_output;
     flam3_frame *frame;
-    flam3_genome *cps; // todo free this appropriately
-    int cps_counter;
+    flam3_genome *cps;
+    //int cps_counter;
     int ncps;
 } ShowFreqsContext;
 
@@ -450,25 +449,6 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     AVFrame *out;
     int ch, n;
 
-//    if (s->bands_output == NULL) {
-//        // clear bands data file
-//        FILE *file = fopen("/tmp/bands.txt", "w");
-//
-//        if (file == NULL) {
-//            av_log(ctx, AV_LOG_ERROR, "Could not open bands file for writing\n");
-//        } else {
-//            fclose(file);
-//
-//            av_log(ctx, AV_LOG_DEBUG, "Truncated/created bands file\n");
-//
-//            // and open it for appending (to the empty one)
-//            s->bands_output = fopen("/tmp/bands.txt", "a");
-//            if (s->bands_output == NULL) {
-//                av_log(ctx, AV_LOG_ERROR, "Could not open bands file for appending\n");
-//            }
-//        }
-//    }
-
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
         return AVERROR(ENOMEM);
@@ -543,12 +523,6 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             s->heights[i] = (s->heights[i] + y) / 2;
              */
 
-//            if (s->bands_output != NULL) {
-//                fprintf(s->bands_output, "%0.3f ", av_clipd(y, 0, 0.5f) / 0.5f);
-//            } else {
-//                av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
-//            }
-
             // Getting it onto a more moving scale
             if (y == 0)
                 y = 0;
@@ -562,26 +536,13 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             double velocity = 0;
             double old_velocity = s->velocities[i];
             double old_height = s->heights[i];
-//            if (s->heights[i] < 0.000001)
-//                velocity = y;
-
-
-//            if (old_height < 0.000001) // initial frame
-//                velocity = y;
-//            else {
             double diff = y - s->heights[i];
 
-//                velocity = FFSIGN(diff) * 0.01;
-//
-//                if (fabs(diff) < fabs(velocity)) {
-//                    velocity = diff;
-//                }
             velocity = FFSIGN(diff) * pow(diff, 2.0);
 
             if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
                 velocity = velocity * 0.1;
             }
-//            }
 
             s->velocities[i] = velocity;
             s->heights[i] += velocity;
@@ -598,16 +559,24 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                     // 0 was "ch"
                     int cur_y = 0;
                     for (cur_y = (int) max_y; cur_y < outlink->h; cur_y++) {
-                        int colorized = (int) (((float) cur_y / outlink->h) * 256);
-                        colorized = av_clip(colorized, 0, 255);
                         // colorized is lowest at the top and highest at the bottom, goes from 0 to 255
-                        uint8_t color[4];
-                        color[0] = av_clip((255 - colorized) * 2.5, 20, 255);
-                        color[1] = av_clip((colorized - 96) * 2 * (255 / (255 - 96.0f)), 20, 255);
-                        color[2] = 20;
+                        uint8_t colorized = (uint8_t) av_clipf(((float) cur_y / outlink->h) * 256, 0, 255);
+
+#define GREEN_Y_START 96
+#define RED_GRADIENT_SPEED 2.5
+#define MIN_BAND_COLOR_CMP 20
+
+                        uint8_t band_color[4];
+                        band_color[0] = (uint8_t) av_clip((int) ((255 - colorized) * RED_GRADIENT_SPEED), MIN_BAND_COLOR_CMP, 255);
+                        band_color[1] = (uint8_t) av_clip((int) ((colorized - GREEN_Y_START) * 2 * (255 / (255.0f - GREEN_Y_START))), MIN_BAND_COLOR_CMP, 255);
+                        band_color[2] = MIN_BAND_COLOR_CMP;
                         // make sure no channel is at 0 so we can easily color key if we need to (thus all the 20s)
 
-                        draw_dot(out, cur_x, cur_y, color);
+#undef GREEN_Y_START
+#undef RED_GRADIENT_SPEED
+#undef MIN_BAND_COLOR_CMP
+
+                        draw_dot(out, cur_x, cur_y, band_color);
                     }
                 }
             }
@@ -616,43 +585,32 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
         if (s->mode == FLAM3) {
             if (s->frame == NULL) {
                 flam3_frame *frame = malloc(sizeof(flam3_frame));
-                frame->pixel_aspect_ratio = 1;
-                int ncps;
-//            FILE *flame_handle = fopen("/Users/dennis/dev/flam3/test.flam3", "r");
-//
-//            if (flame_handle == NULL) {
-//                av_log(ctx, AV_LOG_ERROR, "flame handle file was invalid, please make sure it exists\n");
-//            }
-//            s->cps = flam3_parse_from_file(flame_handle, NULL, flam3_defaults_on, &ncps);
-                s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &ncps);
-                s->ncps = ncps;
-
-//            fclose(flame_handle);
+                frame->pixel_aspect_ratio = outlink->sample_aspect_ratio.num / outlink->sample_aspect_ratio.den;
+                s->cps = flam3_parse_xml2(FLAM3_WREATH, NULL, flam3_defaults_on, &s->ncps);
 
                 frame->ngenomes = 1;
-                frame->verbose = 1;
-                // 480x360
+                frame->verbose = 0;
+                // TODO sizes under the 480x360 might be very weird/wrong in the visualization
                 frame->bits = 33;
                 frame->bytes_per_channel = 1;
                 frame->earlyclip = 0;
                 frame->time = 0.0;
                 frame->progress = 0;
-                frame->nthreads = 1;
+                frame->nthreads = 2;
                 frame->sub_batch_size = 10000;
 
                 s->frame = frame;
             }
 
             // go to the next flame in the render, but wrap around to zero so we don't go out of bounds.
-            s->cps_counter++;
-            s->cps_counter %= s->ncps;
+//            s->cps_counter++;
+//            s->cps_counter %= s->ncps;
 
-            flam3_genome* genome = &s->cps[s->cps_counter];
-//            for (int xform_index = 0; xform_index < genome->num_xforms; xform_index++) {
-//                for (int var_index = 0; var_index < 12; var_index++) {
-//                    av_log(ctx, AV_LOG_INFO, "xform %d var %d = %0.2f\n", xform_index, var_index, genome->xform[xform_index].var[var_index]);
-//                }
-//            }
+            flam3_genome* genome = &s->cps[0];
+
+            genome->width = out->width;
+            genome->height = out->height;
+            genome->pixels_per_unit = out->width;
 
             for (int band_index = 0; band_index < NB_BANDS && (band_index+1) < genome->num_xforms; band_index++) {
                 genome->xform[band_index + 1].var[0] = s->heights[band_index];
@@ -660,25 +618,12 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             // and load that flame into the frame
             s->frame->genomes = genome;
 
-
-
-            av_log(ctx, AV_LOG_INFO, "using flame #%d\n", s->cps_counter);
-            av_log(ctx, AV_LOG_INFO, "estimated memory %f\n", flam3_render_memory_required(s->frame));
+            av_log(ctx, AV_LOG_VERBOSE, "estimated memory %f\n", flam3_render_memory_required(s->frame));
             stat_struct stats;
             flam3_render(s->frame, out->data[0], flam3_field_both, 4, 0, &stats);
-            av_log(ctx, AV_LOG_INFO, "badvals=%0.3f, num_iters=%ld, render_seconds=%d\n", stats.badvals,
+            av_log(ctx, AV_LOG_VERBOSE, "badvals=%0.3f, num_iters=%ld, render_seconds=%d\n", stats.badvals,
                    stats.num_iters, stats.render_seconds);
         }
-    } else if (s->mode == TWENTYBANDS) {
-        av_log(ctx, AV_LOG_DEBUG, "doing twentybands\n");
-
-
-
-//        if (s->bands_output != NULL) {
-//            fprintf(s->bands_output, "\n");
-//        } else {
-//            av_log(ctx, AV_LOG_WARNING, "Bands file handle is null\n");
-//        }
     } else {
         for (ch = 0; ch < s->nb_channels; ch++) {
 
@@ -759,6 +704,10 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     if (s->frame != NULL) {
         free(s->frame);
+    }
+
+    if (s->cps != NULL) {
+        free(s->cps);
     }
 }
 
