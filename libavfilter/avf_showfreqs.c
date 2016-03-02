@@ -695,11 +695,20 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
                         }
                     }
 
-                    genome->xform[0].var[13] = lowmax;
-                    genome->xform[0].var[10] = 1 - lowmax;
+                    double y_x = genome->xform[0].c[1][0];
+                    double y_y = genome->xform[0].c[1][1];
+                    double mag = sqrt(y_x * y_x + y_y * y_y);
+                    double target_mag = lowmax;
 
-                    genome->xform[1].var[15] = highmax;
-                    genome->xform[1].var[11] = 1 - highmax;
+                    // Animate the mag of the y-point
+                    genome->xform[0].c[1][0] = y_x / mag * target_mag;
+                    genome->xform[0].c[1][1] = y_y / mag * target_mag;
+
+//                    genome->xform[0].var[13] = lowmax;
+//                    genome->xform[0].var[10] = 1 - lowmax;
+//
+//                    genome->xform[1].var[15] = highmax;
+//                    genome->xform[1].var[11] = 1 - highmax;
                     break;
                 };
             }
