@@ -176,7 +176,6 @@ static int file_delete(URLContext *h)
 
 static int file_move(URLContext *h_src, URLContext *h_dst)
 {
-#if HAVE_UNISTD_H
     const char *filename_src = h_src->filename;
     const char *filename_dst = h_dst->filename;
     av_strstart(filename_src, "file:", &filename_src);
@@ -186,9 +185,6 @@ static int file_move(URLContext *h_src, URLContext *h_dst)
         return AVERROR(errno);
 
     return 0;
-#else
-    return AVERROR(ENOSYS);
-#endif /* HAVE_UNISTD_H */
 }
 
 #if CONFIG_FILE_PROTOCOL
@@ -333,7 +329,7 @@ static int file_close_dir(URLContext *h)
 #endif /* HAVE_LSTAT */
 }
 
-URLProtocol ff_file_protocol = {
+const URLProtocol ff_file_protocol = {
     .name                = "file",
     .url_open            = file_open,
     .url_read            = file_read,
@@ -379,7 +375,7 @@ static int pipe_open(URLContext *h, const char *filename, int flags)
     return 0;
 }
 
-URLProtocol ff_pipe_protocol = {
+const URLProtocol ff_pipe_protocol = {
     .name                = "pipe",
     .url_open            = pipe_open,
     .url_read            = file_read,

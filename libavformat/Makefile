@@ -19,6 +19,7 @@ OBJS = allformats.o         \
        options.o            \
        os_support.o         \
        qtpalette.o          \
+       protocols.o          \
        riff.o               \
        sdp.o                \
        url.o                \
@@ -218,6 +219,7 @@ OBJS-$(CONFIG_IMAGE_EXR_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_J2K_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_JPEG_PIPE_DEMUXER)    += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_JPEGLS_PIPE_DEMUXER)  += img2dec.o img2.o
+OBJS-$(CONFIG_IMAGE_PCX_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_PICTOR_PIPE_DEMUXER)  += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_PNG_PIPE_DEMUXER)     += img2dec.o img2.o
 OBJS-$(CONFIG_IMAGE_QDRAW_PIPE_DEMUXER)   += img2dec.o img2.o
@@ -268,7 +270,8 @@ OBJS-$(CONFIG_MMF_DEMUXER)               += mmf.o
 OBJS-$(CONFIG_MMF_MUXER)                 += mmf.o rawenc.o
 OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o replaygain.o
 OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o avc.o hevc.o \
-                                            movenchint.o mov_chan.o rtp.o movenccenc.o
+                                            movenchint.o mov_chan.o rtp.o \
+                                            movenccenc.o rawutils.o
 OBJS-$(CONFIG_MP2_MUXER)                 += mp3enc.o rawenc.o id3v2enc.o
 OBJS-$(CONFIG_MP3_DEMUXER)               += mp3dec.o replaygain.o
 OBJS-$(CONFIG_MP3_MUXER)                 += mp3enc.o rawenc.o id3v2enc.o
@@ -563,10 +566,10 @@ SLIBOBJS-$(HAVE_GNU_WINDRES)             += avformatres.o
 SKIPHEADERS-$(CONFIG_FFRTMPCRYPT_PROTOCOL) += rtmpdh.h
 SKIPHEADERS-$(CONFIG_NETWORK)            += network.h rtsp.h
 
-TESTPROGS = async                                                       \
-            seek                                                        \
+TESTPROGS = seek                                                        \
             srtp                                                        \
             url                                                         \
+#           async                                                       \
 
 TESTPROGS-$(CONFIG_MOV_MUXER)            += movenc
 TESTPROGS-$(CONFIG_NETWORK)              += noproxy

@@ -91,6 +91,7 @@ Standard options:
   --enable-rpath           use rpath to allow installing libraries in paths
                            not part of the dynamic linker search path
                            use rpath when linking programs [USE WITH CARE]
+  --install-name-dir=DIR   Darwin directory name for installed targets
 
 Licensing options:
   --enable-gpl             allow use of GPL code, the resulting libs
@@ -2080,6 +2081,7 @@ PATHS_LIST="
     pkgconfigdir
     prefix
     shlibdir
+    install_name_dir
 "
 
 CMDLINE_SET="
@@ -3138,8 +3140,16 @@ MUXER_LIST=$(find_things    muxer    _MUX     libavformat/allformats.c)
 DEMUXER_LIST=$(find_things  demuxer  DEMUX    libavformat/allformats.c)
 OUTDEV_LIST=$(find_things   outdev   OUTDEV   libavdevice/alldevices.c)
 INDEV_LIST=$(find_things    indev    _IN      libavdevice/alldevices.c)
-PROTOCOL_LIST=$(find_things protocol PROTOCOL libavformat/allformats.c)
 FILTER_LIST=$(find_things   filter   FILTER   libavfilter/allfilters.c)
+
+find_things_extern(){
+    thing=$1
+    pattern=$2
+    file=$source_path/$3
+    sed -n "s/^[^#]*extern.*$pattern *ff_\([^ ]*\)_$thing;/\1_$thing/p" "$file"
+}
+
+PROTOCOL_LIST=$(find_things_extern protocol URLProtocol libavformat/protocols.c)
 
 ALL_COMPONENTS="
     $BSF_LIST
@@ -4524,7 +4534,8 @@ case $target_os in
         ;;
     darwin)
         enabled ppc && add_asflags -force_cpusubtype_ALL
-        SHFLAGS='-dynamiclib -Wl,-single_module -Wl,-install_name,$(SHLIBDIR)/$(SLIBNAME_WITH_MAJOR),-current_version,$(LIBVERSION),-compatibility_version,$(LIBMAJOR)'
+        install_name_dir_default='$(SHLIBDIR)'
+        SHFLAGS='-dynamiclib -Wl,-single_module -Wl,-install_name,$(INSTALL_NAME_DIR)/$(SLIBNAME_WITH_MAJOR),-current_version,$(LIBVERSION),-compatibility_version,$(LIBMAJOR)'
         enabled x86_32 && append SHFLAGS -Wl,-read_only_relocs,suppress
         strip="${strip} -x"
         add_ldflags -Wl,-dynamic,-search_paths_first
@@ -5574,7 +5585,8 @@ enabled libnut            && require libnut libnut.h nut_demuxer_init -lnut
 enabled libopencore_amrnb && require libopencore_amrnb opencore-amrnb/interf_dec.h Decoder_Interface_init -lopencore-amrnb
 enabled libopencore_amrwb && require libopencore_amrwb opencore-amrwb/dec_if.h D_IF_init -lopencore-amrwb
 enabled libopencv         && { check_header opencv2/core/core_c.h &&
-                               require_pkg_config opencv opencv2/core/core_c.h cvCreateImageHeader ||
+                               { use_pkg_config opencv opencv2/core/core_c.h cvCreateImageHeader ||
+                                 require opencv opencv2/core/core_c.h cvCreateImageHeader -lopencv_core -lopencv_imgproc; } ||
                                require_pkg_config opencv opencv/cxcore.h cvCreateImageHeader; }
 enabled libopenh264       && require_pkg_config openh264 wels/codec_api.h WelsGetCodecVersion
 enabled libopenjpeg       && { check_lib openjpeg-2.1/openjpeg.h opj_version -lopenjp2 -DOPJ_STATIC ||
@@ -6371,6 +6383,7 @@ DATADIR=\$(DESTDIR)$datadir
 DOCDIR=\$(DESTDIR)$docdir
 MANDIR=\$(DESTDIR)$mandir
 PKGCONFIGDIR=\$(DESTDIR)$pkgconfigdir
+INSTALL_NAME_DIR=$install_name_dir
 SRC_PATH=$source_path
 SRC_LINK=$source_link
 ifndef MAIN_MAKEFILE

@@ -293,6 +293,7 @@ static int set_codec_from_probe_data(AVFormatContext *s, AVStream *st,
         { "m4v",       AV_CODEC_ID_MPEG4,      AVMEDIA_TYPE_VIDEO },
         { "mp3",       AV_CODEC_ID_MP3,        AVMEDIA_TYPE_AUDIO },
         { "mpegvideo", AV_CODEC_ID_MPEG2VIDEO, AVMEDIA_TYPE_VIDEO },
+        { "truehd",    AV_CODEC_ID_TRUEHD,     AVMEDIA_TYPE_AUDIO },
         { 0 }
     };
     int score;
@@ -3095,7 +3096,8 @@ void ff_rfps_calculate(AVFormatContext *ic)
             for (j= 0; j<MAX_STD_TIMEBASES; j++) {
                 int k;
 
-                if (st->info->codec_info_duration && st->info->codec_info_duration*av_q2d(st->time_base) < (1001*12.0)/get_std_framerate(j))
+                if (st->info->codec_info_duration &&
+                    st->info->codec_info_duration*av_q2d(st->time_base) < (1001*11.5)/get_std_framerate(j))
                     continue;
                 if (!st->info->codec_info_duration && get_std_framerate(j) < 1001*12)
                     continue;
