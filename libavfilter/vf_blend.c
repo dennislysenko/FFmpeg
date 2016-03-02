@@ -97,6 +97,8 @@ typedef struct ThreadData {
     { "subtract",   "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_SUBTRACT},   0, 0, FLAGS, "mode" },\
     { "vividlight", "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_VIVIDLIGHT}, 0, 0, FLAGS, "mode" },\
     { "xor",        "", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_XOR},        0, 0, FLAGS, "mode" },\
+    { "partialmask", "using A as a mask, darkens B by 50% relative to A's white value", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_PARTIAL_MASK}, 0, 0, FLAGS, "mode" },\
+    { "coloredmask",  "color-keys pure black pixels out of A and overlays the remainder on top of B", 0, AV_OPT_TYPE_CONST, {.i64=BLEND_COLORED_MASK}, 0, 0, FLAGS, "mode" },\
     { "c0_expr",  "set color component #0 expression", OFFSET(params[0].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX, FLAGS },\
     { "c1_expr",  "set color component #1 expression", OFFSET(params[1].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX, FLAGS },\
     { "c2_expr",  "set color component #2 expression", OFFSET(params[2].expr_str), AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX, FLAGS },\
@@ -265,6 +267,8 @@ DEFINE_BLEND8(or,         A | B)
 DEFINE_BLEND8(xor,        A ^ B)
 DEFINE_BLEND8(vividlight, (A < 128) ? BURN(2 * A, B) : DODGE(2 * (A - 128), B))
 DEFINE_BLEND8(linearlight,av_clip_uint8((B < 128) ? B + 2 * A - 255 : B + 2 * (A - 128)))
+DEFINE_BLEND8(partialmask,((B / 255.0) * (A / 255.0 * 0.5 + 0.5)) * 255)
+DEFINE_BLEND8(coloredmask,(A == 0 ? B : A))
 
 #undef MULTIPLY
 #undef SCREEN
@@ -307,6 +311,8 @@ DEFINE_BLEND16(or,         A | B)
 DEFINE_BLEND16(xor,        A ^ B)
 DEFINE_BLEND16(vividlight, (A < 32768) ? BURN(2 * A, B) : DODGE(2 * (A - 32768), B))
 DEFINE_BLEND16(linearlight,av_clip_uint16((B < 32768) ? B + 2 * A - 65535 : B + 2 * (A - 32768)))
+DEFINE_BLEND16(partialmask,((B / 65535) * (A / 65535 * 0.5 + 0.5)) * 65535)
+DEFINE_BLEND16(coloredmask,(A == 0 ? B : A))
 
 #define DEFINE_BLEND_EXPR(type, name, div)                                     \
 static void blend_expr_## name(const uint8_t *_top, ptrdiff_t top_linesize,          \
@@ -480,6 +486,8 @@ void ff_blend_init(FilterParams *param, int is_16bit)
     case BLEND_SUBTRACT:   param->blend = is_16bit ? blend_subtract_16bit   : blend_subtract_8bit;   break;
     case BLEND_VIVIDLIGHT: param->blend = is_16bit ? blend_vividlight_16bit : blend_vividlight_8bit; break;
     case BLEND_XOR:        param->blend = is_16bit ? blend_xor_16bit        : blend_xor_8bit;        break;
+    case BLEND_PARTIAL_MASK: param->blend = is_16bit ? blend_partialmask_16bit : blend_partialmask_8bit; break;
+    case BLEND_COLORED_MASK: param->blend = is_16bit ? blend_coloredmask_16bit : blend_coloredmask_8bit; break;
     }
 
     if (param->opacity == 0 && param->mode != BLEND_NORMAL) {
