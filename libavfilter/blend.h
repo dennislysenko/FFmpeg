@@ -60,6 +60,7 @@ enum BlendMode {
     BLEND_FREEZE,
     BLEND_PARTIAL_MASK,
     BLEND_COLORED_MASK,
+    BLEND_RIFF_ADD,
     BLEND_NB
 };
 
@@ -73,6 +74,7 @@ typedef struct FilterParams {
                   uint8_t *dst, ptrdiff_t dst_linesize,
                   ptrdiff_t width, ptrdiff_t height,
                   struct FilterParams *param, double *values);
+    double coeff;
 } FilterParams;
 
 void ff_blend_init(FilterParams *param, int is_16bit);
