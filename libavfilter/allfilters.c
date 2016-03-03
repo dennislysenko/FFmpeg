@@ -329,6 +329,7 @@ void avfilter_register_all(void)
     REGISTER_FILTER(SHOWWAVES,      showwaves,      avf);
     REGISTER_FILTER(SHOWWAVESPIC,   showwavespic,   avf);
     REGISTER_FILTER(SPECTRUMSYNTH,  spectrumsynth,  vaf);
+    REGISTER_FILTER(AUDIOBLUR,      audioblur,      avf);
 
     /* multimedia sources */
     REGISTER_FILTER(AMOVIE,         amovie,         avsrc);

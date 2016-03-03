@@ -309,6 +309,7 @@ OBJS-$(CONFIG_SHOWVOLUME_FILTER)             += avf_showvolume.o
 OBJS-$(CONFIG_SHOWWAVES_FILTER)              += avf_showwaves.o
 OBJS-$(CONFIG_SHOWWAVESPIC_FILTER)           += avf_showwaves.o
 OBJS-$(CONFIG_SPECTRUMSYNTH_FILTER)          += vaf_spectrumsynth.o window_func.o
+OBJS-$(CONFIG_AUDIOBLUR_FILTER)              += avf_audioblur.o
 
 # multimedia sources
 OBJS-$(CONFIG_AMOVIE_FILTER)                 += src_movie.o
