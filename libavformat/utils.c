@@ -33,6 +33,7 @@
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/time.h"
+#include "libavutil/time_internal.h"
 #include "libavutil/timestamp.h"
 
 #include "libavcodec/bytestream.h"
@@ -4757,5 +4758,42 @@ int ff_parse_creation_time_metadata(AVFormatContext *s, int64_t *timestamp, int 
             return ret;
         }
     }
+    return 0;
+}
+
+int ff_standardize_creation_time(AVFormatContext *s)
+{
+    int64_t timestamp;
+    int ret = ff_parse_creation_time_metadata(s, &timestamp, 0);
+    if (ret == 1) {
+        time_t seconds = timestamp / 1000000;
+        struct tm *ptm, tmbuf;
+        ptm = gmtime_r(&seconds, &tmbuf);
+        if (ptm) {
+            char buf[32];
+            if (!strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", ptm))
+                return AVERROR_EXTERNAL;
+            av_strlcatf(buf, sizeof(buf), ".%06dZ", (int)(timestamp % 1000000));
+            av_dict_set(&s->metadata, "creation_time", buf, 0);
+        } else {
+            return AVERROR_EXTERNAL;
+        }
+    }
+    return ret;
+}
+
+int ff_get_packet_palette(AVFormatContext *s, AVPacket *pkt, int ret, const uint8_t **palette)
+{
+    int size;
+
+    *palette = av_packet_get_side_data(pkt, AV_PKT_DATA_PALETTE, &size);
+    if (*palette && size != AVPALETTE_SIZE) {
+        av_log(s, AV_LOG_ERROR, "Invalid palette side data\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    if (!*palette && ret == CONTAINS_PAL)
+        *palette = pkt->data + pkt->size - AVPALETTE_SIZE;
+
     return 0;
 }
