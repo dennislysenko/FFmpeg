@@ -12,6 +12,7 @@
 #include "libavutil/audio_fifo.h"
 #include "libavcodec/avfft.h"
 #include "window_func.h"
+#include "libavutil/intreadwrite.h"
 
 #define AUDIO 0
 #define VIDEO 1
@@ -19,7 +20,8 @@
 #define NB_BANDS 20
 
 typedef struct AudioblurContext {
-    FFDualInputContext dinput;
+//    FFDualInputContext dinput;
+    FFFrameSync fs;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
     AVAudioFifo *fifo;
@@ -72,8 +74,8 @@ static const AVOption audioblur_options[] = {
             { "gauss",    "Gauss",            0, AV_OPT_TYPE_CONST, {.i64=WFUNC_GAUSS},    0, 0, FLAGS, "win_func" },
             { "tukey",    "Tukey",            0, AV_OPT_TYPE_CONST, {.i64=WFUNC_TUKEY},    0, 0, FLAGS, "win_func" },
             { "overlap",  "set window overlap", OFFSET(overlap), AV_OPT_TYPE_FLOAT, {.dbl=1.}, 0., 1., FLAGS },
-        { "shortest",    "force termination when the shortest input terminates", OFFSET(dinput.shortest), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS },
-        { "repeatlast",  "repeat last bottom frame", OFFSET(dinput.repeatlast), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
+//        { "shortest",    "force termination when the shortest input terminates", OFFSET(dinput.shortest), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS },
+//        { "repeatlast",  "repeat last bottom frame", OFFSET(dinput.repeatlast), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
         { NULL }
 };
 
@@ -197,16 +199,17 @@ static int filter_audio_frame(AVFilterLink *inlink, AVFrame *in)
             goto fail;
 
         ret = read_freqs(inlink, fin);
-        av_frame_free(&fin);
+//        av_frame_free(&fin);
         av_audio_fifo_drain(s->fifo, s->hop_size);
         if (ret < 0)
             goto fail;
     }
 
     fail:
+        // frame will be freed by framesync i think
 //    s->pts = AV_NOPTS_VALUE;
-    av_frame_free(&fin);
-    av_frame_free(&in);
+//    av_frame_free(&fin);
+//    av_frame_free(&in);
     return ret;
 }
 
@@ -264,13 +267,53 @@ static AVFrame *blend_frame(AVFilterContext *ctx, AVFrame *audio_buf, const AVFr
     return 0;
 }
 
-static av_cold int init(AVFilterContext *ctx)
-{
-    AudioblurContext *s = ctx->priv;
+static int process_fs_frame(struct FFFrameSync *fs) {
+    AVFilterContext *ctx = fs->parent;
+    AudioblurContext *s = fs->opaque;
+    AVFilterLink *outlink = ctx->outputs[0];
+    AVFrame *out, *audio, *video;
+    int ret;
 
-    s->dinput.process = blend_frame;
-    return 0;
+    if ((ret = ff_framesync_get_frame(&s->fs, 0, &audio,   0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, 1, &video, 0)) < 0)
+        return ret;
+
+    if (ctx->is_disabled) {
+        out = av_frame_clone(video);
+        if (!out)
+            return AVERROR(ENOMEM);
+    } else {
+        out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+        if (!out)
+            return AVERROR(ENOMEM);
+        av_frame_copy_props(out, video);
+
+        filter_audio_frame(ctx->inputs[0], audio);
+
+        int x, y;
+        for (int x = 0; x < out->width; x++) {
+            for (int y = 0; y < out->height; y++) {
+                uint8_t color[4];
+                color[0] = (uint8_t) av_clip((double) x / out->width * 255, 0, 255);
+                color[1] = (uint8_t) av_clip((double) y / out->height * 255, 0, 255);
+                AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(color));
+            }
+        }
+    }
+    out->pts = av_rescale_q(audio->pts, s->fs.time_base, outlink->time_base);
+
+    return ff_filter_frame(outlink, out);
 }
+
+
+
+//static av_cold int init(AVFilterContext *ctx)
+//{
+//    AudioblurContext *s = ctx->priv;
+//
+//    s->dinput.process = blend_frame;
+//    return 0;
+//}
 
 static int query_formats(AVFilterContext *ctx)
 {
@@ -296,7 +339,8 @@ static av_cold void uninit(AVFilterContext *ctx)
     int i;
     AudioblurContext *s = ctx->priv;
 
-    ff_dualinput_uninit(&s->dinput);
+//    ff_dualinput_uninit(&s->dinput);
+    ff_framesync_uninit(&s->fs);
 
     av_fft_end(s->fft);
     for (i = 0; i < s->nb_channels; i++) {
@@ -323,6 +367,7 @@ static int config_output(AVFilterLink *outlink)
     AudioblurContext *s = ctx->priv;
     const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(videolink->format);
     float overlap;
+    FFFrameSyncIn *in;
     int ret, is_16bit, i;
 
     outlink->w = videolink->w;
@@ -333,9 +378,31 @@ static int config_output(AVFilterLink *outlink)
 
 
     is_16bit = pix_desc->comp[0].depth == 16;
-    if ((ret = ff_dualinput_init(ctx, &s->dinput)) < 0)
+    if ((ret = ff_framesync_init(&s->fs, ctx, 2)) < 0)
+        return ret;
+    in = s->fs.in;
+    in[0].time_base = audiolink->time_base;
+    in[1].time_base = videolink->time_base;
+
+    // make the audio and video both at the same sync level so they simulcast frame events
+    in[0].sync = 1;
+    in[1].sync = 1;
+
+    // don't extend the audio stream at all, that's just unwanted, if there are no more audio frames left, we'll cut the stream
+    in[0].before = EXT_STOP;
+    in[0].after = EXT_STOP;
+
+    // but do extend the video stream since it's prob just an image
+    in[1].before = EXT_INFINITY;
+    in[1].after = EXT_INFINITY;
+
+    s->fs.opaque = s;
+    s->fs.on_event = process_fs_frame;
+
+    if ((ret = ff_framesync_configure(&s->fs)) < 0)
         return ret;
 
+    // FFT stuff:
     s->nb_freq = 1 << (s->fft_bits - 1);
     s->win_size = s->nb_freq << 1;
     av_audio_fifo_free(s->fifo);
@@ -404,18 +471,18 @@ static int config_output(AVFilterLink *outlink)
 static int request_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->dst;
-
-    av_log(ctx, AV_LOG_INFO, "start of request_frame\n");
     AudioblurContext *s = outlink->src->priv;
-    int ret = ff_dualinput_request_frame(&s->dinput, outlink);
-    av_log(ctx, AV_LOG_INFO, "end of request_frame\n");
-    return ret;
+
+//    int ret = ff_dualinput_request_frame(&s->dinput, outlink);
+//    return ret;
+    return ff_framesync_request_frame(&s->fs, outlink);
 }
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
 {
     AudioblurContext *s = inlink->dst->priv;
-    return ff_dualinput_filter_frame(&s->dinput, inlink, buf);
+//    return ff_dualinput_filter_frame(&s->dinput, inlink, buf);
+    return ff_framesync_filter_frame(&s->fs, inlink, buf);
 }
 
 static const AVFilterPad audioblur_inputs[] = {
@@ -444,7 +511,7 @@ static const AVFilterPad audioblur_outputs[] = {
 AVFilter ff_avf_audioblur = {
         .name = "audioblur",
         .description = NULL_IF_CONFIG_SMALL("Blur video frame based on the low-band frequencies of co-timed audio frames."),
-        .init = init,
+//        .init = init,
         .uninit = uninit,
         .priv_size = sizeof(AudioblurContext),
         .query_formats = query_formats,
