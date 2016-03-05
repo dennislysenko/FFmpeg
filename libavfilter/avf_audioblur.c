@@ -287,18 +287,42 @@ static int process_fs_frame(struct FFFrameSync *fs) {
         if (!out)
             return AVERROR(ENOMEM);
         av_frame_copy_props(out, video);
+        out->format = video->format;
 
         filter_audio_frame(ctx->inputs[0], audio);
 
-        int x, y;
-        for (int x = 0; x < out->width; x++) {
-            for (int y = 0; y < out->height; y++) {
-                uint8_t color[4];
-                color[0] = (uint8_t) av_clip((double) x / out->width * 255, 0, 255);
-                color[1] = (uint8_t) av_clip((double) y / out->height * 255, 0, 255);
-                AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(color));
+        int x, y, o, plane;
+
+        av_assert0(video->width == out->width);
+        av_assert0(video->height == out->height);
+
+        av_frame_ref(out, video);
+
+//        for (plane = 0; plane < 4 && out->data[plane] && out->linesize[plane] && video->data[plane] && video->linesize[plane]; plane++) {
+            for (x = 0; x < video->width; x++) {
+                for (y = 0; y < video->height; y++) {
+//                    uint8_t *dst = out->data[0] + y * out->linesize[0] + x * 4;
+//                    uint8_t *src = video->data[0] + y * video->linesize[0] + x * 4;
+//                    *dst = *src;
+
+                    for (int sh = 0; sh < 4; sh++) {
+                        o = out->linesize[0] * y + x * 4 + sh;
+                        out->data[0][o] = video->data[0][o] * 0;
+                    }
+
+//                uint8_t color[4];
+//                color[0] = (uint8_t) av_clip((double) x / out->width * 255, 0, 255);
+//                color[1] = (uint8_t) av_clip((double) y / out->height * 255, 0, 255);
+//                AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(color));
+                }
             }
-        }
+//        }
+
+//        av_frame_copy(out, video);
+
+//        int planes = av_pix_fmt_count_planes(out->format);
+//        av_log(ctx, AV_LOG_INFO, "Planes = %d", planes);
+
     }
     out->pts = av_rescale_q(audio->pts, s->fs.time_base, outlink->time_base);
 
