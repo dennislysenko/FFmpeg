@@ -34,6 +34,8 @@
 #include "avfilter.h"
 #include "internal.h"
 #include "window_func.h"
+
+#if CONFIG_FLAM3
 #include "flam3.h"
 
 #define FLAM3_STRINGIFY(x) #x
@@ -138,11 +140,13 @@ char FLAM3_PABLO[] = FLAM3_STRINGIFY(
 </flame>
 );
 
+enum Flame          { WREATH, PABLO, NB_FLAMES };
+#endif
+
 enum DisplayMode    { LINE, BAR, DOT, TWENTYBANDS, FLAM3, NB_MODES };
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
-enum Flame          { WREATH, PABLO, NB_FLAMES };
 
 #define NB_BANDS 20
 
@@ -170,8 +174,10 @@ typedef struct ShowFreqsContext {
     int64_t pts;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
+#if CONFIG_FLAM3
     flam3_frame *frame;
     flam3_genome *cps;
+#endif
     //int cps_counter;
     int ncps;
     int selected_flame;
@@ -188,10 +194,12 @@ static const AVOption showfreqs_options[] = {
         { "bar",  "show bars",   0, AV_OPT_TYPE_CONST, {.i64=BAR},    0, 0, FLAGS, "mode" },
         { "dot",  "show dots",   0, AV_OPT_TYPE_CONST, {.i64=DOT},    0, 0, FLAGS, "mode" },
         { "twentybands", "20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=TWENTYBANDS}, 0, 0, FLAGS, "mode" },
+#if CONFIG_FLAM3
         { "flam3", "fractal flame", 0, AV_OPT_TYPE_CONST, {.i64=FLAM3}, 0, 0, FLAGS, "mode" },
     { "flame", "set flam3 fractal flame", OFFSET(selected_flame), AV_OPT_TYPE_INT, {.i64=WREATH}, 0, NB_FLAMES-1, FLAGS, "flame" },
         { "wreath", "shows a circle of triangles that pulsate with 20-band frequences",  0, AV_OPT_TYPE_CONST, {.i64=WREATH},   0, 0, FLAGS, "flame" },
         { "pablo", "shows a circle of triangles that pulsate with 20-band frequences",  0, AV_OPT_TYPE_CONST, {.i64=PABLO},   0, 0, FLAGS, "flame" },
+#endif
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -596,8 +604,8 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
             if (s->mode == TWENTYBANDS) {
                 // if running twentybands, render the bar
-                float start_x = bar_size * i;
-                float end_x = start_x + bar_size;
+                float start_x = av_clipf(bar_size * i + 2, 0, s->w);
+                float end_x = av_clipf(start_x + bar_size - 2, start_x, s->w);
                 int cur_x = 0;
                 const double max_y = (1 - s->heights[i]) * outlink->h;
                 for (cur_x = (int) start_x; cur_x < (int) end_x; cur_x++) {
@@ -628,6 +636,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             }
         }
 
+#if CONFIG_FLAM3
         if (s->mode == FLAM3) {
             if (s->frame == NULL) {
                 flam3_frame *frame = malloc(sizeof(flam3_frame));
@@ -722,6 +731,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             av_log(ctx, AV_LOG_VERBOSE, "badvals=%0.3f, num_iters=%ld, render_seconds=%d\n", stats.badvals,
                    stats.num_iters, stats.render_seconds);
         }
+#endif
     } else {
         for (ch = 0; ch < s->nb_channels; ch++) {
 
@@ -800,6 +810,7 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->window_func_lut);
     av_audio_fifo_free(s->fifo);
 
+#if CONFIG_FLAM3
     if (s->frame != NULL) {
         free(s->frame);
     }
@@ -807,6 +818,7 @@ static av_cold void uninit(AVFilterContext *ctx)
     if (s->cps != NULL) {
         free(s->cps);
     }
+#endif
 }
 
 static const AVFilterPad showfreqs_inputs[] = {

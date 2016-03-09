@@ -729,7 +729,7 @@ static int read_var_block_data(ALSDecContext *ctx, ALSBlockData *bd)
                     quant_cof[k] = decode_rice(gb, rice_param) + offset;
                     if (quant_cof[k] < -64 || quant_cof[k] > 63) {
                         av_log(avctx, AV_LOG_ERROR,
-                               "quant_cof %"PRIu32" is out of range.\n",
+                               "quant_cof %"PRId32" is out of range.\n",
                                quant_cof[k]);
                         return AVERROR_INVALIDDATA;
                     }
@@ -1292,13 +1292,13 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
             if (ch[dep].time_diff_sign) {
                 t      = -t;
                 if (begin < t) {
-                    av_log(ctx->avctx, AV_LOG_ERROR, "begin %td smaller than time diff index %d.\n", begin, t);
+                    av_log(ctx->avctx, AV_LOG_ERROR, "begin %"PTRDIFF_SPECIFIER" smaller than time diff index %d.\n", begin, t);
                     return AVERROR_INVALIDDATA;
                 }
                 begin -= t;
             } else {
                 if (end < t) {
-                    av_log(ctx->avctx, AV_LOG_ERROR, "end %td smaller than time diff index %d.\n", end, t);
+                    av_log(ctx->avctx, AV_LOG_ERROR, "end %"PTRDIFF_SPECIFIER" smaller than time diff index %d.\n", end, t);
                     return AVERROR_INVALIDDATA;
                 }
                 end   -= t;
