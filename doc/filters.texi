@@ -12635,6 +12635,9 @@ Draw graticule for white point.
 
 @item black
 Draw graticule for black point.
+
+@item name
+Draw color points short names.
 @end table
 
 @item bgopacity, b
@@ -13160,6 +13163,31 @@ Similar as above, but shows difference between blue and red chroma.
 
 @item color
 Displays actual color value on waveform.
+@end table
+
+@item graticule, g
+Set which graticule to display.
+
+@table @samp
+@item none
+Do not display graticule.
+
+@item green
+Display green graticule showing legal broadcast ranges.
+@end table
+
+@item opacity, o
+Set graticule opacity.
+
+@item flags, fl
+Set graticule flags.
+
+@table @samp
+@item numbers
+Draw numbers above lines. By default enabled.
+
+@item dots
+Draw dots instead of lines.
 @end table
 @end table
 
