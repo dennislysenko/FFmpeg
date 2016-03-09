@@ -604,8 +604,8 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
             if (s->mode == TWENTYBANDS) {
                 // if running twentybands, render the bar
-                float start_x = bar_size * i;
-                float end_x = start_x + bar_size;
+                float start_x = av_clipf(bar_size * i + 2, 0, s->w);
+                float end_x = av_clipf(start_x + bar_size - 2, start_x, s->w);
                 int cur_x = 0;
                 const double max_y = (1 - s->heights[i]) * outlink->h;
                 for (cur_x = (int) start_x; cur_x < (int) end_x; cur_x++) {
