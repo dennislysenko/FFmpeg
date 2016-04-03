@@ -1581,6 +1581,11 @@ static int avi_read_idx1(AVFormatContext *s, int size)
         st  = s->streams[index];
         ast = st->priv_data;
 
+        /* Skip 'xxpc' palette change entries in the index until a logic
+         * to process these is properly implemented. */
+        if ((tag >> 16 & 0xff) == 'p' && (tag >> 24 & 0xff) == 'c')
+            continue;
+
         if (first_packet && first_packet_pos) {
             if (avi->movi_list + 4 != pos || pos + 500 > first_packet_pos)
                 data_offset  = first_packet_pos - pos;

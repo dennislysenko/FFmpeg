@@ -137,17 +137,17 @@ OBJS-$(CONFIG_A64MULTI_ENCODER)        += a64multienc.o elbg.o
 OBJS-$(CONFIG_A64MULTI5_ENCODER)       += a64multienc.o elbg.o
 OBJS-$(CONFIG_AAC_DECODER)             += aacdec.o aactab.o aacsbr.o aacps_float.o \
                                           aacadtsdec.o mpeg4audio.o kbdwin.o \
-                                          sbrdsp.o aacpsdsp_float.o
+                                          sbrdsp.o aacpsdsp_float.o cbrt_data.o
 OBJS-$(CONFIG_AAC_FIXED_DECODER)       += aacdec_fixed.o aactab.o aacsbr_fixed.o aacps_fixed.o \
                                           aacadtsdec.o mpeg4audio.o kbdwin.o \
-                                          sbrdsp_fixed.o aacpsdsp_fixed.o
+                                          sbrdsp_fixed.o aacpsdsp_fixed.o cbrt_data_fixed.o
 OBJS-$(CONFIG_AAC_ENCODER)             += aacenc.o aaccoder.o aacenctab.o    \
                                           aacpsy.o aactab.o      \
                                           aacenc_is.o \
                                           aacenc_tns.o \
                                           aacenc_ltp.o \
                                           aacenc_pred.o \
-                                          psymodel.o mpeg4audio.o kbdwin.o
+                                          psymodel.o mpeg4audio.o kbdwin.o cbrt_data.o
 OBJS-$(CONFIG_AASC_DECODER)            += aasc.o msrledec.o
 OBJS-$(CONFIG_AC3_DECODER)             += ac3dec_float.o ac3dec_data.o ac3.o kbdwin.o
 OBJS-$(CONFIG_AC3_FIXED_DECODER)       += ac3dec_fixed.o ac3dec_data.o ac3.o kbdwin.o
@@ -801,8 +801,27 @@ OBJS-$(CONFIG_WEBM_MUXER)              += mpeg4audio.o mpegaudiodata.o  \
 OBJS-$(CONFIG_ELBG_FILTER)             += elbg.o
 
 # external codec libraries
+OBJS-$(CONFIG_AAC_AT_DECODER)             += audiotoolboxdec.o
+OBJS-$(CONFIG_AC3_AT_DECODER)             += audiotoolboxdec.o
+OBJS-$(CONFIG_ADPCM_IMA_QT_AT_DECODER)    += audiotoolboxdec.o
+OBJS-$(CONFIG_ALAC_AT_DECODER)            += audiotoolboxdec.o
+OBJS-$(CONFIG_AMR_NB_AT_DECODER)          += audiotoolboxdec.o
+OBJS-$(CONFIG_EAC3_AT_DECODER)            += audiotoolboxdec.o
+OBJS-$(CONFIG_GSM_MS_AT_DECODER)          += audiotoolboxdec.o
+OBJS-$(CONFIG_ILBC_AT_DECODER)            += audiotoolboxdec.o
+OBJS-$(CONFIG_MP1_AT_DECODER)             += audiotoolboxdec.o
+OBJS-$(CONFIG_MP2_AT_DECODER)             += audiotoolboxdec.o
+OBJS-$(CONFIG_MP3_AT_DECODER)             += audiotoolboxdec.o
+OBJS-$(CONFIG_PCM_MULAW_AT_DECODER)       += audiotoolboxdec.o
+OBJS-$(CONFIG_PCM_ALAW_AT_DECODER)        += audiotoolboxdec.o
+OBJS-$(CONFIG_QDMC_AT_DECODER)            += audiotoolboxdec.o
+OBJS-$(CONFIG_QDM2_AT_DECODER)            += audiotoolboxdec.o
+OBJS-$(CONFIG_AAC_AT_ENCODER)             += audiotoolboxenc.o
+OBJS-$(CONFIG_ALAC_AT_ENCODER)            += audiotoolboxenc.o
+OBJS-$(CONFIG_ILBC_AT_ENCODER)            += audiotoolboxenc.o
+OBJS-$(CONFIG_PCM_ALAW_AT_ENCODER)        += audiotoolboxenc.o
+OBJS-$(CONFIG_PCM_MULAW_AT_ENCODER)       += audiotoolboxenc.o
 OBJS-$(CONFIG_LIBCELT_DECODER)            += libcelt_dec.o
-OBJS-$(CONFIG_LIBDCADEC_DECODER)          += libdcadec.o dca.o
 OBJS-$(CONFIG_LIBFAAC_ENCODER)            += libfaac.o
 OBJS-$(CONFIG_LIBFDK_AAC_DECODER)         += libfdk-aacdec.o
 OBJS-$(CONFIG_LIBFDK_AAC_ENCODER)         += libfdk-aacenc.o
@@ -906,6 +925,7 @@ OBJS-$(CONFIG_AAC_ADTSTOASC_BSF)          += aac_adtstoasc_bsf.o aacadtsdec.o \
                                              mpeg4audio.o
 OBJS-$(CONFIG_CHOMP_BSF)                  += chomp_bsf.o
 OBJS-$(CONFIG_DUMP_EXTRADATA_BSF)         += dump_extradata_bsf.o
+OBJS-$(CONFIG_DCA_CORE_BSF)               += dca_core_bsf.o
 OBJS-$(CONFIG_H264_MP4TOANNEXB_BSF)       += h264_mp4toannexb_bsf.o
 OBJS-$(CONFIG_HEVC_MP4TOANNEXB_BSF)       += hevc_mp4toannexb_bsf.o
 OBJS-$(CONFIG_IMX_DUMP_HEADER_BSF)        += imx_dump_header_bsf.o
@@ -918,6 +938,7 @@ OBJS-$(CONFIG_MP3_HEADER_DECOMPRESS_BSF)  += mp3_header_decompress_bsf.o \
 OBJS-$(CONFIG_NOISE_BSF)                  += noise_bsf.o
 OBJS-$(CONFIG_REMOVE_EXTRADATA_BSF)       += remove_extradata_bsf.o
 OBJS-$(CONFIG_TEXT2MOVSUB_BSF)            += movsub_bsf.o
+OBJS-$(CONFIG_VP9_SUPERFRAME_BSF)         += vp9_superframe_bsf.o
 
 # thread libraries
 OBJS-$(HAVE_LIBC_MSVCRT)               += file_open.o
@@ -1016,8 +1037,8 @@ $(GEN_HEADERS): $(SUBDIR)%_tables.h: $(SUBDIR)%_tablegen$(HOSTEXESUF)
 	$(M)./$< > $@
 
 ifdef CONFIG_HARDCODED_TABLES
-$(SUBDIR)aacdec.o: $(SUBDIR)cbrt_tables.h
-$(SUBDIR)aacdec_fixed.o: $(SUBDIR)cbrt_fixed_tables.h
+$(SUBDIR)cbrt_data.o: $(SUBDIR)cbrt_tables.h
+$(SUBDIR)cbrt_data_fixed.o: $(SUBDIR)cbrt_fixed_tables.h
 $(SUBDIR)aacps_float.o: $(SUBDIR)aacps_tables.h
 $(SUBDIR)aacps_fixed.o: $(SUBDIR)aacps_fixed_tables.h
 $(SUBDIR)aactab_fixed.o: $(SUBDIR)aac_fixed_tables.h

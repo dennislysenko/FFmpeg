@@ -936,14 +936,44 @@ static int64_t select_from_pts_buffer(AVStream *st, int64_t *pts_buffer, int64_t
     return dts;
 }
 
+/**
+ * Updates the dts of packets of a stream in pkt_buffer, by re-ordering the pts
+ * of the packets in a window.
+ */
+static void update_dts_from_pts(AVFormatContext *s, int stream_index,
+                                AVPacketList *pkt_buffer)
+{
+    AVStream *st       = s->streams[stream_index];
+    int delay          = st->codec->has_b_frames;
+    int i;
+
+    int64_t pts_buffer[MAX_REORDER_DELAY+1];
+
+    for (i = 0; i<MAX_REORDER_DELAY+1; i++)
+        pts_buffer[i] = AV_NOPTS_VALUE;
+
+    for (; pkt_buffer; pkt_buffer = get_next_pkt(s, st, pkt_buffer)) {
+        if (pkt_buffer->pkt.stream_index != stream_index)
+            continue;
+
+        if (pkt_buffer->pkt.pts != AV_NOPTS_VALUE && delay <= MAX_REORDER_DELAY) {
+            pts_buffer[0] = pkt_buffer->pkt.pts;
+            for (i = 0; i<delay && pts_buffer[i] > pts_buffer[i + 1]; i++)
+                FFSWAP(int64_t, pts_buffer[i], pts_buffer[i + 1]);
+
+            pkt_buffer->pkt.dts = select_from_pts_buffer(st, pts_buffer, pkt_buffer->pkt.dts);
+        }
+    }
+}
+
 static void update_initial_timestamps(AVFormatContext *s, int stream_index,
                                       int64_t dts, int64_t pts, AVPacket *pkt)
 {
     AVStream *st       = s->streams[stream_index];
     AVPacketList *pktl = s->internal->packet_buffer ? s->internal->packet_buffer : s->internal->parse_queue;
-    int64_t pts_buffer[MAX_REORDER_DELAY+1];
+    AVPacketList *pktl_it;
+
     uint64_t shift;
-    int i, delay;
 
     if (st->first_dts != AV_NOPTS_VALUE ||
         dts           == AV_NOPTS_VALUE ||
@@ -951,40 +981,38 @@ static void update_initial_timestamps(AVFormatContext *s, int stream_index,
         is_relative(dts))
         return;
 
-    delay         = st->codec->has_b_frames;
     st->first_dts = dts - (st->cur_dts - RELATIVE_TS_BASE);
     st->cur_dts   = dts;
     shift         = (uint64_t)st->first_dts - RELATIVE_TS_BASE;
 
-    for (i = 0; i<MAX_REORDER_DELAY+1; i++)
-        pts_buffer[i] = AV_NOPTS_VALUE;
-
     if (is_relative(pts))
         pts += shift;
 
-    for (; pktl; pktl = get_next_pkt(s, st, pktl)) {
-        if (pktl->pkt.stream_index != stream_index)
+    for (pktl_it = pktl; pktl_it; pktl_it = get_next_pkt(s, st, pktl_it)) {
+        if (pktl_it->pkt.stream_index != stream_index)
             continue;
-        if (is_relative(pktl->pkt.pts))
-            pktl->pkt.pts += shift;
+        if (is_relative(pktl_it->pkt.pts))
+            pktl_it->pkt.pts += shift;
 
-        if (is_relative(pktl->pkt.dts))
-            pktl->pkt.dts += shift;
+        if (is_relative(pktl_it->pkt.dts))
+            pktl_it->pkt.dts += shift;
 
-        if (st->start_time == AV_NOPTS_VALUE && pktl->pkt.pts != AV_NOPTS_VALUE)
-            st->start_time = pktl->pkt.pts;
-
-        if (pktl->pkt.pts != AV_NOPTS_VALUE && delay <= MAX_REORDER_DELAY && has_decode_delay_been_guessed(st)) {
-            pts_buffer[0] = pktl->pkt.pts;
-            for (i = 0; i<delay && pts_buffer[i] > pts_buffer[i + 1]; i++)
-                FFSWAP(int64_t, pts_buffer[i], pts_buffer[i + 1]);
-
-            pktl->pkt.dts = select_from_pts_buffer(st, pts_buffer, pktl->pkt.dts);
+        if (st->start_time == AV_NOPTS_VALUE && pktl_it->pkt.pts != AV_NOPTS_VALUE) {
+            st->start_time = pktl_it->pkt.pts;
+            if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && st->codec->sample_rate)
+                st->start_time += av_rescale_q(st->skip_samples, (AVRational){1, st->codec->sample_rate}, st->time_base);
         }
     }
 
-    if (st->start_time == AV_NOPTS_VALUE)
+    if (has_decode_delay_been_guessed(st)) {
+        update_dts_from_pts(s, stream_index, pktl);
+    }
+
+    if (st->start_time == AV_NOPTS_VALUE) {
         st->start_time = pts;
+        if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && st->codec->sample_rate)
+            st->start_time += av_rescale_q(st->skip_samples, (AVRational){1, st->codec->sample_rate}, st->time_base);
+    }
 }
 
 static void update_initial_durations(AVFormatContext *s, AVStream *st,
@@ -3096,7 +3124,7 @@ void ff_rfps_calculate(AVFormatContext *ic)
         if (st->codec->codec_type != AVMEDIA_TYPE_VIDEO)
             continue;
         // the check for tb_unreliable() is not completely correct, since this is not about handling
-        // a unreliable/inexact time base, but a time base that is finer than necessary, as e.g.
+        // an unreliable/inexact time base, but a time base that is finer than necessary, as e.g.
         // ipmovie.c produces.
         if (tb_unreliable(st->codec) && st->info->duration_count > 15 && st->info->duration_gcd > FFMAX(1, st->time_base.den/(500LL*st->time_base.num)) && !st->r_frame_rate.num)
             av_reduce(&st->r_frame_rate.num, &st->r_frame_rate.den, st->time_base.den, st->time_base.num * st->info->duration_gcd, INT_MAX);
@@ -3166,6 +3194,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
     int64_t max_stream_analyze_duration;
     int64_t max_subtitle_analyze_duration;
     int64_t probesize = ic->probesize;
+    int eof_reached = 0;
 
     flush_codecs = probesize > 0;
 
@@ -3179,6 +3208,8 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         max_subtitle_analyze_duration = 30*AV_TIME_BASE;
         if (!strcmp(ic->iformat->name, "flv"))
             max_stream_analyze_duration = 90*AV_TIME_BASE;
+        if (!strcmp(ic->iformat->name, "mpeg") || !strcmp(ic->iformat->name, "mpegts"))
+            max_stream_analyze_duration = 7*AV_TIME_BASE;
     }
 
     if (ic->pb)
@@ -3290,7 +3321,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                 break;
             if (st->first_dts == AV_NOPTS_VALUE &&
                 !(ic->iformat->flags & AVFMT_NOTIMESTAMPS) &&
-                st->codec_info_nb_frames < ic->max_ts_probe &&
+                st->codec_info_nb_frames < ((st->disposition & AV_DISPOSITION_ATTACHED_PIC) ? 1 : ic->max_ts_probe) &&
                 (st->codec->codec_type == AVMEDIA_TYPE_VIDEO ||
                  st->codec->codec_type == AVMEDIA_TYPE_AUDIO))
                 break;
@@ -3332,6 +3363,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 
         if (ret < 0) {
             /* EOF or error*/
+            eof_reached = 1;
             break;
         }
 
@@ -3453,6 +3485,17 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 
         st->codec_info_nb_frames++;
         count++;
+    }
+
+    if (eof_reached && ic->internal->packet_buffer) {
+        int stream_index;
+        for (stream_index = 0; stream_index < ic->nb_streams; stream_index++) {
+            // EOF already reached while reading the stream above.
+            // So continue with reoordering DTS with whatever delay we have.
+            if (!has_decode_delay_been_guessed(st)) {
+                update_dts_from_pts(ic, stream_index, ic->internal->packet_buffer);
+            }
+        }
     }
 
     if (flush_codecs) {
@@ -4710,6 +4753,11 @@ int av_apply_bitstream_filters(AVCodecContext *codec, AVPacket *pkt,
                                            &new_pkt.data, &new_pkt.size,
                                            pkt->data, pkt->size,
                                            pkt->flags & AV_PKT_FLAG_KEY);
+        if (a == 0 && new_pkt.size == 0 && new_pkt.side_data_elems == 0) {
+            av_packet_unref(pkt);
+            memset(pkt, 0, sizeof(*pkt));
+            return 0;
+        }
         if(a == 0 && new_pkt.data != pkt->data) {
             uint8_t *t = av_malloc(new_pkt.size + AV_INPUT_BUFFER_PADDING_SIZE); //the new should be a subset of the old so cannot overflow
             if (t) {
@@ -4816,5 +4864,28 @@ int ff_get_packet_palette(AVFormatContext *s, AVPacket *pkt, int ret, uint32_t *
         return 1;
     }
 
+    return 0;
+}
+
+int ff_bprint_to_codecpar_extradata(AVCodecParameters *par, struct AVBPrint *buf)
+{
+    int ret;
+    char *str;
+
+    ret = av_bprint_finalize(buf, &str);
+    if (ret < 0)
+        return ret;
+    if (!av_bprint_is_complete(buf)) {
+        av_free(str);
+        return AVERROR(ENOMEM);
+    }
+
+    par->extradata = str;
+    /* Note: the string is NUL terminated (so extradata can be read as a
+     * string), but the ending character is not accounted in the size (in
+     * binary formats you are likely not supposed to mux that character). When
+     * extradata is copied, it is also padded with AV_INPUT_BUFFER_PADDING_SIZE
+     * zeros. */
+    par->extradata_size = buf->len;
     return 0;
 }
