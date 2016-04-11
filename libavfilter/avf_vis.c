@@ -37,7 +37,7 @@
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
-enum Vis { SIMPLE_BARS, NB_VIS };
+enum Vis { SIMPLE_BARS, PIXEL_BARS, NB_VIS };
 
 #define NB_BANDS 20
 
@@ -259,6 +259,18 @@ static inline void plot(VisContext *s, AVFrame *out, int x, int y_flipped, uint8
         AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(fg));
 }
 
+static void vis_simple_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS]) {
+    int bar, x, y;
+    const double bar_width = (double) width / NB_BANDS;
+    for (bar = 0; bar < NB_BANDS; bar++) {
+        for (x = bar * bar_width; x < (bar + 1) * bar_width - 4; x++) {
+            for (y = 0; y < frequencies[bar] * height; y++) {
+                plot(s, out, x, y, color);
+            }
+        }
+    }
+}
+
 static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -266,7 +278,9 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     VisContext *s = ctx->priv;
     const int win_size = s->win_size;
     AVFrame *out;
-    int ch, n;
+    int ch, n, i, j;
+    double y, velocity, old_velocity, old_height, diff;
+    void (*vis) (VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS]);
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
@@ -308,10 +322,8 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     const unsigned xscale[] = {0,1,2,3,4,5,6,7,8,11,15,20,27,
                                36,47,62,82,107,141,184,255};
 
-    int i = 0;
-    int j = 0;
     for (i = 0; i < NB_BANDS; i++) {
-        double y = 0;
+        y = 0;
 
         // find the peaks in the different bands
         for (j = xscale[i]; j < xscale[i + 1]; j++) {
@@ -345,10 +357,10 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 //            y = (y * 0.5f) + 0.25f;
 
         // Making it less drastic, giving it some kind of velocity
-        double velocity = 0;
-        double old_velocity = s->velocities[i];
-        double old_height = s->heights[i];
-        double diff = y - s->heights[i];
+        velocity = 0;
+        old_velocity = s->velocities[i];
+        old_height = s->heights[i];
+        diff = y - s->heights[i];
 
         velocity = FFSIGN(diff) * pow(diff, 2.0);
 
@@ -362,16 +374,10 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     }
 
 
-    // rendering. TODO: split this into a switch between a bunch of functions?
-    int bar, x, y;
-    const double bar_width = (double) s->w / NB_BANDS;
-    for (bar = 0; bar < NB_BANDS; bar++) {
-        for (x = bar * bar_width; x < (bar + 1) * bar_width - 4; x++) {
-            for (y = 0; y < s->heights[bar] * s->h; y++) {
-                plot(s, out, x, y, fg);
-            }
-        }
+    switch (s->mode) {
+        case SIMPLE_BARS: vis = vis_simple_bars; break;
     }
+    vis(s, out, s->heights, s->w, s->h, fg, s->velocities);
 
     out->pts = in->pts;
     return ff_filter_frame(outlink, out);
