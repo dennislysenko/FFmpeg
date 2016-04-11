@@ -76,8 +76,9 @@ typedef struct VisContext {
 static const AVOption vis_options[] = {
     { "size", "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "1024x512"}, 0, 0, FLAGS },
     { "s",    "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "1024x512"}, 0, 0, FLAGS },
-    { "vis", "set display mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=SIMPLE_BARS}, 0, NB_VIS-1, FLAGS, "mode" },
-        { "simpleBars", "simple 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=SIMPLE_BARS}, 0, 0, FLAGS, "mode" },
+    { "mode", "set display mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=SIMPLE_BARS}, 0, NB_VIS-1, FLAGS, "mode" },
+        { "simple_bars", "simple 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=SIMPLE_BARS}, 0, 0, FLAGS, "mode" },
+        { "pixel_bars", "pixellized 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=PIXEL_BARS}, 0, 0, FLAGS, "mode" },
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -271,6 +272,26 @@ static void vis_simple_bars(VisContext *s, AVFrame *out, double frequencies[NB_B
     }
 }
 
+static void vis_pixel_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS]) {
+    int bar_index, x, y, vertical_buckets, block_index;
+    double block_height, bar_height;
+    const double bar_width = (double) width / NB_BANDS;
+
+    for (bar_index = 0; bar_index < NB_BANDS; bar_index++) {
+        for (x = bar_index * bar_width; x < (bar_index + 1) * bar_width - 4; x++) {
+            block_height = bar_width;
+            bar_height = frequencies[bar_index] * height;
+            vertical_buckets = (int) (bar_height / block_height);
+
+            for (block_index = 0; block_index < vertical_buckets; block_index++) {
+                for (y = block_index * block_height; y < (block_index + 1) * block_height - 4; y++) {
+                    plot(s, out, x, y, color);
+                }
+            }
+        }
+    }
+}
+
 static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -376,6 +397,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
     switch (s->mode) {
         case SIMPLE_BARS: vis = vis_simple_bars; break;
+        case PIXEL_BARS:  vis = vis_pixel_bars;  break;
     }
     vis(s, out, s->heights, s->w, s->h, fg, s->velocities);
 
