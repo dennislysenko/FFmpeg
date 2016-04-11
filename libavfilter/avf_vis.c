@@ -37,7 +37,7 @@
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
-enum Vis { SIMPLE_BARS, PIXEL_BARS, NB_VIS };
+enum Vis { SIMPLE_BARS, PIXEL_BARS, SHAKING_CENTER_BARS, NB_VIS };
 
 #define NB_BANDS 20
 
@@ -65,9 +65,7 @@ typedef struct VisContext {
     int64_t pts;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
-    //int cps_counter;
-    int ncps;
-    int selected_flame;
+    int frame_index;
 } VisContext;
 
 #define OFFSET(x) offsetof(VisContext, x)
@@ -79,6 +77,7 @@ static const AVOption vis_options[] = {
     { "mode", "set display mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=SIMPLE_BARS}, 0, NB_VIS-1, FLAGS, "mode" },
         { "simple_bars", "simple 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=SIMPLE_BARS}, 0, 0, FLAGS, "mode" },
         { "pixel_bars", "pixellized 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=PIXEL_BARS}, 0, 0, FLAGS, "mode" },
+        { "shaking_center_bars", "bars in the center that beat in time", 0, AV_OPT_TYPE_CONST, {.i64=SHAKING_CENTER_BARS}, 0, 0, FLAGS, "mode" },
     { "ascale", "set amplitude scale", OFFSET(ascale), AV_OPT_TYPE_INT, {.i64=AS_LOG}, 0, NB_ASCALES-1, FLAGS, "ascale" },
         { "lin",  "linear",      0, AV_OPT_TYPE_CONST, {.i64=AS_LINEAR}, 0, 0, FLAGS, "ascale" },
         { "sqrt", "square root", 0, AV_OPT_TYPE_CONST, {.i64=AS_SQRT},   0, 0, FLAGS, "ascale" },
@@ -260,7 +259,7 @@ static inline void plot(VisContext *s, AVFrame *out, int x, int y_flipped, uint8
         AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(fg));
 }
 
-static void vis_simple_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS]) {
+static void vis_simple_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS], int frame_index) {
     int bar, x, y;
     const double bar_width = (double) width / NB_BANDS;
     for (bar = 0; bar < NB_BANDS; bar++) {
@@ -272,7 +271,7 @@ static void vis_simple_bars(VisContext *s, AVFrame *out, double frequencies[NB_B
     }
 }
 
-static void vis_pixel_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS]) {
+static void vis_pixel_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS], int frame_index) {
     int bar_index, x, y, vertical_buckets, block_index;
     double block_height, bar_height;
     const double bar_width = (double) width / NB_BANDS;
@@ -292,6 +291,38 @@ static void vis_pixel_bars(VisContext *s, AVFrame *out, double frequencies[NB_BA
     }
 }
 
+static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS], int frame_index) {
+    int bar_index, i, x, y;
+    double bass_average, bar_mid_x, bar_height, variation_x, variation_y;
+
+    const double bar_width = (double) width / NB_BANDS;
+    const double actual_bar_width = bar_width / 4;
+    const int mid_y = height / 2;
+
+    int num_bass_bands = NB_BANDS / 4;
+    bass_average = 0.0;
+    for (i = 0; i < num_bass_bands; i++) {
+        bass_average += frequencies[i];
+    }
+    bass_average /= num_bass_bands;
+
+    const double max_variation_x = 0.08 * width;
+    const double max_variation_y = 0.00 * height;
+
+    for (bar_index = 0; bar_index < NB_BANDS; bar_index++) {
+        bar_mid_x = (bar_index + 0.5) * bar_width;
+        for (x = bar_mid_x - actual_bar_width / 2; x < bar_mid_x + actual_bar_width / 2; x++) {
+            bar_height = frequencies[bar_index] * height;
+
+            for (y = mid_y - bar_height / 2; y < mid_y + bar_height / 2; y++) {
+                variation_x = bass_average * bass_average * max_variation_x * sin(frame_index);
+                variation_y = bass_average * bass_average * max_variation_y * sin(frame_index);
+                plot(s, out, x + variation_x, y + variation_y, color);
+            }
+        }
+    }
+}
+
 static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -301,7 +332,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     AVFrame *out;
     int ch, n, i, j;
     double y, velocity, old_velocity, old_height, diff;
-    void (*vis) (VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS]);
+    void (*vis) (VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS], int frame_index);
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out)
@@ -396,10 +427,12 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
 
     switch (s->mode) {
-        case SIMPLE_BARS: vis = vis_simple_bars; break;
-        case PIXEL_BARS:  vis = vis_pixel_bars;  break;
+        case SIMPLE_BARS:          vis = vis_simple_bars;          break;
+        case PIXEL_BARS:           vis = vis_pixel_bars;           break;
+        case SHAKING_CENTER_BARS:  vis = vis_shaking_center_bars;  break;
     }
-    vis(s, out, s->heights, s->w, s->h, fg, s->velocities);
+    vis(s, out, s->heights, s->w, s->h, fg, s->velocities, s->frame_index);
+    s->frame_index++;
 
     out->pts = in->pts;
     return ff_filter_frame(outlink, out);
