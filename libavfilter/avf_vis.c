@@ -306,6 +306,10 @@ static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequenc
     }
     bass_average /= num_bass_bands;
 
+    // Don't shake it when the bass isn't kicking.
+    if (bass_average < 0.1)
+        bass_average = 0;
+
     const double max_variation_x = 0.08 * width;
     const double max_variation_y = 0.00 * height;
 
@@ -317,6 +321,7 @@ static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequenc
             for (y = mid_y - bar_height / 2; y < mid_y + bar_height / 2; y++) {
                 variation_x = bass_average * bass_average * max_variation_x * sin(frame_index);
                 variation_y = bass_average * bass_average * max_variation_y * sin(frame_index);
+
                 plot(s, out, x + variation_x, y + variation_y, color);
             }
         }
@@ -409,20 +414,22 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 //            y = (y * 0.5f) + 0.25f;
 
         // Making it less drastic, giving it some kind of velocity
-        velocity = 0;
-        old_velocity = s->velocities[i];
-        old_height = s->heights[i];
-        diff = y - s->heights[i];
-
-        velocity = FFSIGN(diff) * pow(diff, 2.0);
-
-        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
-            velocity = velocity * 0.1;
-        }
-
-        s->velocities[i] = velocity;
-        s->heights[i] += velocity;
-        s->heights[i] = av_clipd(s->heights[i], 0, 1);
+//        velocity = 0;
+//        old_velocity = s->velocities[i];
+//        old_height = s->heights[i];
+//        diff = y - s->heights[i];
+//
+//        velocity = FFSIGN(diff) * pow(diff, 2.0);
+//
+//        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
+//            velocity = velocity * 0.1;
+//        }
+//
+//        s->velocities[i] = velocity;
+//        s->heights[i] += velocity;
+//        s->heights[i] = av_clipd(s->heights[i], 0, 1);
+        s->velocities[i] = y - s->heights[i];
+        s->heights[i] = y;
     }
 
 
