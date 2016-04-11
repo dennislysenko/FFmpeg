@@ -307,10 +307,10 @@ static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequenc
     bass_average /= num_bass_bands;
 
     // Don't shake it when the bass isn't kicking.
-    if (bass_average < 0.1)
-        bass_average = 0;
+//    if (bass_average < 0.1)
+//        bass_average = 0;
 
-    const double max_variation_x = 0.08 * width;
+    const double max_variation_x = 0.15 * width;
     const double max_variation_y = 0.00 * height;
 
     for (bar_index = 0; bar_index < NB_BANDS; bar_index++) {
@@ -319,8 +319,8 @@ static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequenc
             bar_height = frequencies[bar_index] * height;
 
             for (y = mid_y - bar_height / 2; y < mid_y + bar_height / 2; y++) {
-                variation_x = bass_average * bass_average * max_variation_x * sin(frame_index);
-                variation_y = bass_average * bass_average * max_variation_y * sin(frame_index);
+                variation_x = pow(bass_average, 3) * max_variation_x * sin(frame_index);
+                variation_y = pow(bass_average, 3) * max_variation_y * sin(frame_index);
 
                 plot(s, out, x + variation_x, y + variation_y, color);
             }
