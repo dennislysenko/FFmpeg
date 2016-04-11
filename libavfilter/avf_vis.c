@@ -60,7 +60,7 @@ typedef struct VisContext {
     int nb_freq;
     int win_size;
     float scale;
-    char *colors;
+    char *color;
     AVAudioFifo *fifo;
     int64_t pts;
     double heights[NB_BANDS];
@@ -119,7 +119,7 @@ static const AVOption vis_options[] = {
         { "tukey",    "Tukey",            0, AV_OPT_TYPE_CONST, {.i64=WFUNC_TUKEY},    0, 0, FLAGS, "win_func" },
     { "overlap",  "set window overlap", OFFSET(overlap), AV_OPT_TYPE_FLOAT, {.dbl=1.}, 0., 1., FLAGS },
     { "averaging", "set time averaging", OFFSET(avg), AV_OPT_TYPE_INT, {.i64=1}, 0, INT32_MAX, FLAGS },
-    { "colors", "set channels colors", OFFSET(colors), AV_OPT_TYPE_STRING, {.str = "red|green|blue|yellow|orange|lime|pink|magenta|brown" }, 0, 0, FLAGS },
+    { "color", "set color", OFFSET(color), AV_OPT_TYPE_STRING, {.str = "white" }, 0, 0, FLAGS },
     { "cmode", "set channel mode", OFFSET(cmode), AV_OPT_TYPE_INT, {.i64=COMBINED}, 0, NB_CMODES-1, FLAGS, "cmode" },
         { "combined", "show all channels in same window",  0, AV_OPT_TYPE_CONST, {.i64=COMBINED}, 0, 0, FLAGS, "cmode" },
         { "separate", "show each channel in own window",   0, AV_OPT_TYPE_CONST, {.i64=SEPARATE}, 0, 0, FLAGS, "cmode" },
@@ -259,43 +259,12 @@ static inline void plot(VisContext *s, AVFrame *out, int x, int y_flipped, uint8
         AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(fg));
 }
 
-static int get_sx(VisContext *s, int f)
-{
-    switch (s->fscale) {
-    case FS_LINEAR:
-        return (s->w/(float)s->nb_freq)*f;
-    case FS_LOG:
-        return s->w-pow(s->w, (s->nb_freq-f-1)/(s->nb_freq-1.));
-    case FS_RLOG:
-        return pow(s->w, f/(s->nb_freq-1.));
-    }
-
-    return 0;
-}
-
-static float get_bsize(VisContext *s, int f)
-{
-    switch (s->fscale) {
-    case FS_LINEAR:
-        return s->w/(float)s->nb_freq;
-    case FS_LOG:
-        return pow(s->w, (s->nb_freq-f-1)/(s->nb_freq-1.))-
-               pow(s->w, (s->nb_freq-f-2)/(s->nb_freq-1.));
-    case FS_RLOG:
-        return pow(s->w, (f+1)/(s->nb_freq-1.))-
-               pow(s->w,  f   /(s->nb_freq-1.));
-    }
-
-    return 1.;
-}
-
 static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 {
     AVFilterContext *ctx = inlink->dst;
     AVFilterLink *outlink = ctx->outputs[0];
     VisContext *s = ctx->priv;
     const int win_size = s->win_size;
-    char *colors, *color, *saveptr = NULL;
     AVFrame *out;
     int ch, n;
 
@@ -330,16 +299,9 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 #define IM(x, ch) s->fft_data[ch][x].im
 #define M(a, b) (sqrt((a) * (a) + (b) * (b)))
 
-    colors = av_strdup(s->colors);
-    if (!colors) {
-        av_frame_free(&out);
-        return AVERROR(ENOMEM);
-    }
-
     uint8_t fg[4] = {0xff, 0xff, 0xff, 0xff};
-    color = av_strtok(ch == 0 ? colors : NULL, " |", &saveptr);
-    if (color)
-        av_parse_color(fg, color, -1, ctx);
+    if (s->color)
+        av_parse_color(fg, s->color, -1, ctx);
 
 
     // make 20-band data.
@@ -404,14 +366,13 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
     int bar, x, y;
     const double bar_width = (double) s->w / NB_BANDS;
     for (bar = 0; bar < NB_BANDS; bar++) {
-        for (x = bar * bar_width; x < (bar + 1) * bar_width - 1; x++) {
+        for (x = bar * bar_width; x < (bar + 1) * bar_width - 4; x++) {
             for (y = 0; y < s->heights[bar] * s->h; y++) {
                 plot(s, out, x, y, fg);
             }
         }
     }
 
-    av_free(colors);
     out->pts = in->pts;
     return ff_filter_frame(outlink, out);
 }
