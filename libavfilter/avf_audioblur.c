@@ -215,60 +215,6 @@ static int filter_audio_frame(AVFilterLink *inlink, AVFrame *in)
     return ret;
 }
 
-static AVFrame *blend_frame(AVFilterContext *ctx, AVFrame *audio_buf, const AVFrame *video_buf)
-{
-//    AVFilterContext *ctx = inlink->dst;
-//    AudioblurContext *s = ctx->priv;
-//    AVFilterLink *inlink = ctx->inputs[0];
-    AVFilterLink *outlink = ctx->outputs[0];
-    AVFrame *dst_buf;
-//    int plane;
-
-    av_log(ctx, AV_LOG_ERROR, "blending frame\n");
-
-    filter_audio_frame(ctx->inputs[0], audio_buf);
-
-    av_log(ctx, AV_LOG_ERROR, "done filtering audio frame ; copying video frame\n");
-
-    dst_buf = ff_get_video_buffer(outlink, outlink->w, outlink->h);
-    if (!dst_buf)
-        return video_buf;
-    av_frame_copy_props(dst_buf, video_buf);
-
-    av_log(ctx, AV_LOG_ERROR, "copied props\n");
-
-//    for (plane = 0; plane < s->nb_planes; plane++) {
-//        int hsub = plane == 1 || plane == 2 ? s->hsub : 0;
-//        int vsub = plane == 1 || plane == 2 ? s->vsub : 0;
-//        int outw = AV_CEIL_RSHIFT(dst_buf->width,  hsub);
-//        int outh = AV_CEIL_RSHIFT(dst_buf->height, vsub);
-//        FilterParams *param = &s->params[plane];
-//        ThreadData td = { .top = video_buf, .bottom = bottom_buf, .dst = dst_buf,
-//                .w = outw, .h = outh, .param = param, .plane = plane,
-//                .inlink = inlink };
-//
-//        ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(outh, ctx->graph->nb_threads));
-//    }
-
-//    if (!s->tblend)
-//        av_frame_free(&video_buf);
-
-    uint8_t *src_pointer, *dst_pointer;
-    for (int x = 0; x < video_buf->width; x++) {
-        for (int y = 0; y < video_buf->height; y++) {
-            src_pointer = video_buf->data[0] + x + y * video_buf->linesize[0];
-            dst_pointer = dst_buf->data[0] + x + y * dst_buf->linesize[0];
-            for (int ch = 0; ch < 4; ch++) {
-                dst_pointer[ch] = src_pointer[ch];
-            }
-        }
-    }
-
-    av_log(ctx, AV_LOG_ERROR, "gucci\n");
-
-    return 0;
-}
-
 /* Naive boxblur would sum source pixels from x-radius .. x+radius
  * for destination pixel x. That would be O(radius*width).
  * If you now look at what source pixels represent 2 consecutive
@@ -446,12 +392,14 @@ static int process_fs_frame(struct FFFrameSync *fs) {
     AVFilterLink *outlink = ctx->outputs[0];
     AVFilterLink *videolink = ctx->inputs[VIDEO];
     AVFrame *out, *audio, *video;
-    int ret;
+    int ret, plane;
 
+    // some values for boxblur
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(videolink->format);
     s->hsub = desc->log2_chroma_w;
     s->vsub = desc->log2_chroma_h;
-
+    const int depth = desc->comp[0].depth;
+    const int pixsize = (depth+7)/8;
     const int radius = 1;
     const int power = 1;
 
@@ -459,11 +407,17 @@ static int process_fs_frame(struct FFFrameSync *fs) {
         (ret = ff_framesync_get_frame(&s->fs, 1, &video, 0)) < 0)
         return ret;
 
+    // more values for boxblur--can only initialize these after getting video frame from framesync
+    int cw = AV_CEIL_RSHIFT(videolink->w, s->hsub), ch = AV_CEIL_RSHIFT(video->height, s->vsub);
+    int w[4] = { videolink->w, cw, cw, videolink->w };
+    int h[4] = { video->height, ch, ch, video->height };
+
     if (ctx->is_disabled) {
         out = av_frame_clone(video);
         if (!out)
             return AVERROR(ENOMEM);
     } else {
+        // Set up out-link to copy properties from video in-link
         out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
         if (!out)
             return AVERROR(ENOMEM);
@@ -472,22 +426,19 @@ static int process_fs_frame(struct FFFrameSync *fs) {
 
         filter_audio_frame(ctx->inputs[0], audio);
 
-        int x, y, o, plane;
-
         av_assert0(video->width == out->width);
         av_assert0(video->height == out->height);
 
         av_frame_ref(out, video);
 
-        int cw = AV_CEIL_RSHIFT(videolink->w, s->hsub), ch = AV_CEIL_RSHIFT(video->height, s->vsub);
-        int w[4] = { videolink->w, cw, cw, videolink->w };
-        int h[4] = { video->height, ch, ch, video->height };
-        const int depth = desc->comp[0].depth;
-        const int pixsize = (depth+7)/8;
 
-        if (!(s->temp[0] = av_malloc(2*FFMAX(videolink->w, videolink->h))) ||
-            !(s->temp[1] = av_malloc(2*FFMAX(videolink->w, videolink->h))))
-            return AVERROR(ENOMEM);
+
+        // Allocate temp buffer for blur function if needed
+        if (s->temp[0] == NULL || s->temp[1] == NULL)
+            if (!(s->temp[0] = av_malloc(2*FFMAX(videolink->w, videolink->h))) ||
+                !(s->temp[1] = av_malloc(2*FFMAX(videolink->w, videolink->h))))
+                return AVERROR(ENOMEM);
+
         for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
             hblur(out->data[plane], out->linesize[plane],
                   video->data[plane], video->linesize[plane],
@@ -500,34 +451,6 @@ static int process_fs_frame(struct FFFrameSync *fs) {
                   w[plane], h[plane], radius, power,
                   s->temp, pixsize);
         }
-
-//        for (plane = 0; plane < 4 && out->data[plane] && out->linesize[plane] && video->data[plane] && video->linesize[plane]; plane++) {
-//            for (x = 0; x < video->width; x++) {
-//                for (y = 0; y < video->height; y++) {
-                    // This code copies the stuff flawlessly:
-//                    uint8_t *dst = out->data[0] + y * out->linesize[0] + x * 4;
-//                    uint8_t *src = video->data[0] + y * video->linesize[0] + x * 4;
-//                    *dst = *src;
-
-                    // This doesn't:
-//                    for (int plane = 0; plane < 4 && out->data[plane] && out->linesize[plane]; plane++) {
-//                        o = out->linesize[0] * y + x * 4 + plane;
-//                        out->data[0][o] = video->data[0][o] * 0;
-//                    }
-
-//                uint8_t color[4];
-//                color[0] = (uint8_t) av_clip((double) x / out->width * 255, 0, 255);
-//                color[1] = (uint8_t) av_clip((double) y / out->height * 255, 0, 255);
-//                AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(color));
-//                }
-//            }
-//        }
-
-//        av_frame_copy(out, video);
-
-//        int planes = av_pix_fmt_count_planes(out->format);
-//        av_log(ctx, AV_LOG_INFO, "Planes = %d", planes);
-
     }
     out->pts = av_rescale_q(audio->pts, s->fs.time_base, outlink->time_base);
 
@@ -568,7 +491,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     int i;
     AudioblurContext *s = ctx->priv;
 
-//    ff_dualinput_uninit(&s->dinput);
     ff_framesync_uninit(&s->fs);
 
     av_fft_end(s->fft);
@@ -583,9 +505,8 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->window_func_lut);
     av_audio_fifo_free(s->fifo);
 
-//    if (s->frame != NULL) {
-//        free(s->frame);
-//    }
+    av_freep(&s->temp[0]);
+    av_freep(&s->temp[1]);
 }
 
 static int config_output(AVFilterLink *outlink)
@@ -699,11 +620,8 @@ static int config_output(AVFilterLink *outlink)
 
 static int request_frame(AVFilterLink *outlink)
 {
-    AVFilterContext *ctx = outlink->dst;
     AudioblurContext *s = outlink->src->priv;
 
-//    int ret = ff_dualinput_request_frame(&s->dinput, outlink);
-//    return ret;
     return ff_framesync_request_frame(&s->fs, outlink);
 }
 
