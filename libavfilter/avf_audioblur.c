@@ -37,6 +37,8 @@ typedef struct AudioblurContext {
     int win_func;
     int nb_freq;
     int fft_bits;
+    int hsub, vsub;
+    uint8_t *temp[2]; ///< temporary buffer used in blur_power()
 } AudioblurContext;
 
 #define OFFSET(x) offsetof(AudioblurContext, x)
@@ -267,12 +269,191 @@ static AVFrame *blend_frame(AVFilterContext *ctx, AVFrame *audio_buf, const AVFr
     return 0;
 }
 
+/* Naive boxblur would sum source pixels from x-radius .. x+radius
+ * for destination pixel x. That would be O(radius*width).
+ * If you now look at what source pixels represent 2 consecutive
+ * output pixels, then you see they are almost identical and only
+ * differ by 2 pixels, like:
+ * src0       111111111
+ * dst0           1
+ * src1        111111111
+ * dst1            1
+ * src0-src1  1       -1
+ * so when you know one output pixel you can find the next by just adding
+ * and subtracting 1 input pixel.
+ * The following code adopts this faster variant.
+ */
+#define BLUR(type, depth)                                                   \
+static inline void blur ## depth(type *dst, int dst_step, const type *src,  \
+                                 int src_step, int len, int radius)         \
+{                                                                           \
+    const int length = radius*2 + 1;                                        \
+    const int inv = ((1<<16) + length/2)/length;                            \
+    int x, sum = src[radius*src_step];                                      \
+                                                                            \
+    for (x = 0; x < radius; x++)                                            \
+        sum += src[x*src_step]<<1;                                          \
+                                                                            \
+    sum = sum*inv + (1<<15);                                                \
+                                                                            \
+    for (x = 0; x <= radius; x++) {                                         \
+        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
+        dst[x*dst_step] = sum>>16;                                          \
+    }                                                                       \
+                                                                            \
+    for (; x < len-radius; x++) {                                           \
+        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
+        dst[x*dst_step] = sum >>16;                                         \
+    }                                                                       \
+                                                                            \
+    for (; x < len; x++) {                                                  \
+        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
+        dst[x*dst_step] = sum>>16;                                          \
+    }                                                                       \
+}
+
+BLUR(uint8_t,   8)
+BLUR(uint16_t, 16)
+
+#undef BLUR
+
+//static inline void blur8(uint8_t *dst, int dst_step, const uint8_t *src,  \
+//                                 int src_step, int len, int radius)         \
+//{                                                                           \
+//    const int length = radius*2 + 1;                                        \
+//    const int inv = ((1<<16) + length/2)/length;                            \
+//    int x, sum = src[radius*src_step];                                      \
+//                                                                            \
+//    for (x = 0; x < radius; x++)                                            \
+//        sum += src[x*src_step]<<1;                                          \
+//                                                                            \
+//    sum = sum*inv + (1<<15);                                                \
+//                                                                            \
+//    for (x = 0; x <= radius; x++) {                                         \
+//        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
+//        dst[x*dst_step] = sum>>16;                                          \
+//    }                                                                       \
+//                                                                            \
+//    for (; x < len-radius; x++) {                                           \
+//        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
+//        dst[x*dst_step] = sum >>16;                                         \
+//    }                                                                       \
+//                                                                            \
+//    for (; x < len; x++) {                                                  \
+//        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
+//        dst[x*dst_step] = sum>>16;                                          \
+//    }                                                                       \
+//}
+//
+//static inline void blur16(uint16_t *dst, int dst_step, const uint16_t *src,  \
+//                                 int src_step, int len, int radius)         \
+//{                                                                           \
+//    const int length = radius*2 + 1;                                        \
+//    const int inv = ((1<<16) + length/2)/length;                            \
+//    int x, sum = src[radius*src_step];                                      \
+//                                                                            \
+//    for (x = 0; x < radius; x++)                                            \
+//        sum += src[x*src_step]<<1;                                          \
+//                                                                            \
+//    sum = sum*inv + (1<<15);                                                \
+//                                                                            \
+//    for (x = 0; x <= radius; x++) {                                         \
+//        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
+//        dst[x*dst_step] = sum>>16;                                          \
+//    }                                                                       \
+//                                                                            \
+//    for (; x < len-radius; x++) {                                           \
+//        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
+//        dst[x*dst_step] = sum >>16;                                         \
+//    }                                                                       \
+//                                                                            \
+//    for (; x < len; x++) {                                                  \
+//        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
+//        dst[x*dst_step] = sum>>16;                                          \
+//    }                                                                       \
+//}
+
+static inline void blur(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
+                        int len, int radius, int pixsize)
+{
+    if (pixsize == 1) blur8 (dst, dst_step   , src, src_step   , len, radius);
+    else              blur16((uint16_t*)dst, dst_step>>1, (const uint16_t*)src, src_step>>1, len, radius);
+}
+
+static inline void blur_power(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
+                              int len, int radius, int power, uint8_t *temp[2], int pixsize)
+{
+    uint8_t *a = temp[0], *b = temp[1];
+
+    if (radius && power) {
+        blur(a, pixsize, src, src_step, len, radius, pixsize);
+        for (; power > 2; power--) {
+            uint8_t *c;
+            blur(b, pixsize, a, pixsize, len, radius, pixsize);
+            c = a; a = b; b = c;
+        }
+        if (power > 1) {
+            blur(dst, dst_step, a, pixsize, len, radius, pixsize);
+        } else {
+            int i;
+            if (pixsize == 1) {
+                for (i = 0; i < len; i++)
+                    dst[i*dst_step] = a[i];
+            } else
+                for (i = 0; i < len; i++)
+                    *(uint16_t*)(dst + i*dst_step) = ((uint16_t*)a)[i];
+        }
+    } else {
+        int i;
+        if (pixsize == 1) {
+            for (i = 0; i < len; i++)
+                dst[i*dst_step] = src[i*src_step];
+        } else
+            for (i = 0; i < len; i++)
+                *(uint16_t*)(dst + i*dst_step) = *(uint16_t*)(src + i*src_step);
+    }
+}
+
+static void hblur(uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize,
+                  int w, int h, int radius, int power, uint8_t *temp[2], int pixsize)
+{
+    int y;
+
+    if (radius == 0 && dst == src)
+        return;
+
+    for (y = 0; y < h; y++)
+        blur_power(dst + y*dst_linesize, pixsize, src + y*src_linesize, pixsize,
+                   w, radius, power, temp, pixsize);
+}
+
+static void vblur(uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize,
+                  int w, int h, int radius, int power, uint8_t *temp[2], int pixsize)
+{
+    int x;
+
+    if (radius == 0 && dst == src)
+        return;
+
+    for (x = 0; x < w; x++)
+        blur_power(dst + x*pixsize, dst_linesize, src + x*pixsize, src_linesize,
+                   h, radius, power, temp, pixsize);
+}
+
 static int process_fs_frame(struct FFFrameSync *fs) {
     AVFilterContext *ctx = fs->parent;
     AudioblurContext *s = fs->opaque;
     AVFilterLink *outlink = ctx->outputs[0];
+    AVFilterLink *videolink = ctx->inputs[VIDEO];
     AVFrame *out, *audio, *video;
     int ret;
+
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(videolink->format);
+    s->hsub = desc->log2_chroma_w;
+    s->vsub = desc->log2_chroma_h;
+
+    const int radius = 1;
+    const int power = 1;
 
     if ((ret = ff_framesync_get_frame(&s->fs, 0, &audio,   0)) < 0 ||
         (ret = ff_framesync_get_frame(&s->fs, 1, &video, 0)) < 0)
@@ -298,24 +479,48 @@ static int process_fs_frame(struct FFFrameSync *fs) {
 
         av_frame_ref(out, video);
 
+        int cw = AV_CEIL_RSHIFT(videolink->w, s->hsub), ch = AV_CEIL_RSHIFT(video->height, s->vsub);
+        int w[4] = { videolink->w, cw, cw, videolink->w };
+        int h[4] = { video->height, ch, ch, video->height };
+        const int depth = desc->comp[0].depth;
+        const int pixsize = (depth+7)/8;
+
+        if (!(s->temp[0] = av_malloc(2*FFMAX(videolink->w, videolink->h))) ||
+            !(s->temp[1] = av_malloc(2*FFMAX(videolink->w, videolink->h))))
+            return AVERROR(ENOMEM);
+        for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
+            hblur(out->data[plane], out->linesize[plane],
+                  video->data[plane], video->linesize[plane],
+                  w[plane], h[plane], radius, power,
+                  s->temp, pixsize);
+        }
+        for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
+            vblur(out->data[plane], out->linesize[plane],
+                  out->data[plane], out->linesize[plane],
+                  w[plane], h[plane], radius, power,
+                  s->temp, pixsize);
+        }
+
 //        for (plane = 0; plane < 4 && out->data[plane] && out->linesize[plane] && video->data[plane] && video->linesize[plane]; plane++) {
-            for (x = 0; x < video->width; x++) {
-                for (y = 0; y < video->height; y++) {
+//            for (x = 0; x < video->width; x++) {
+//                for (y = 0; y < video->height; y++) {
+                    // This code copies the stuff flawlessly:
 //                    uint8_t *dst = out->data[0] + y * out->linesize[0] + x * 4;
 //                    uint8_t *src = video->data[0] + y * video->linesize[0] + x * 4;
 //                    *dst = *src;
 
-                    for (int sh = 0; sh < 4; sh++) {
-                        o = out->linesize[0] * y + x * 4 + sh;
-                        out->data[0][o] = video->data[0][o] * 0;
-                    }
+                    // This doesn't:
+//                    for (int plane = 0; plane < 4 && out->data[plane] && out->linesize[plane]; plane++) {
+//                        o = out->linesize[0] * y + x * 4 + plane;
+//                        out->data[0][o] = video->data[0][o] * 0;
+//                    }
 
 //                uint8_t color[4];
 //                color[0] = (uint8_t) av_clip((double) x / out->width * 255, 0, 255);
 //                color[1] = (uint8_t) av_clip((double) y / out->height * 255, 0, 255);
 //                AV_WL32(out->data[0] + y * out->linesize[0] + x * 4, AV_RL32(color));
-                }
-            }
+//                }
+//            }
 //        }
 
 //        av_frame_copy(out, video);
