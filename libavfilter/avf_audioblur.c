@@ -20,7 +20,6 @@
 #define NB_BANDS 20
 
 typedef struct AudioblurContext {
-//    FFDualInputContext dinput;
     FFFrameSync fs;
     double heights[NB_BANDS];
     double velocities[NB_BANDS];
@@ -39,6 +38,7 @@ typedef struct AudioblurContext {
     int fft_bits;
     int hsub, vsub;
     uint8_t *temp[2]; ///< temporary buffer used in blur_power()
+    int64_t pts;
 } AudioblurContext;
 
 #define OFFSET(x) offsetof(AudioblurContext, x)
@@ -75,7 +75,7 @@ static const AVOption audioblur_options[] = {
             { "lanczos",  "Lanczos",          0, AV_OPT_TYPE_CONST, {.i64=WFUNC_LANCZOS},  0, 0, FLAGS, "win_func" },
             { "gauss",    "Gauss",            0, AV_OPT_TYPE_CONST, {.i64=WFUNC_GAUSS},    0, 0, FLAGS, "win_func" },
             { "tukey",    "Tukey",            0, AV_OPT_TYPE_CONST, {.i64=WFUNC_TUKEY},    0, 0, FLAGS, "win_func" },
-            { "overlap",  "set window overlap", OFFSET(overlap), AV_OPT_TYPE_FLOAT, {.dbl=1.}, 0., 1., FLAGS },
+        { "overlap",  "set window overlap", OFFSET(overlap), AV_OPT_TYPE_FLOAT, {.dbl=1.}, 0., 1., FLAGS },
 //        { "shortest",    "force termination when the shortest input terminates", OFFSET(dinput.shortest), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS },
 //        { "repeatlast",  "repeat last bottom frame", OFFSET(dinput.repeatlast), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
         { NULL }
@@ -133,6 +133,9 @@ static int read_freqs(AVFilterLink *inlink, AVFrame *in)
             }
         }
 
+        s->heights[i] = y;
+//        av_log(ctx, AV_LOG_ERROR, "setting peak %d to %0.2f\n", i, y);
+
         // gradual falling:
         /*
         s->heights[i] -= 0.01;
@@ -146,31 +149,31 @@ static int read_freqs(AVFilterLink *inlink, AVFrame *in)
          */
 
         // Getting it onto a more moving scale
-        if (y == 0)
-            y = 0;
-        else
-            y = av_clipf(logf((float)y * 256.0f) / 8.0f, 0, 1);
+//        if (y == 0)
+//            y = 0;
+//        else
+//            y = av_clipf(logf((float)y * 256.0f) / 8.0f, 0, 1);
 
         // Making it centered and less drastic
 //            y = (y * 0.5f) + 0.25f;
 
         // Making it less drastic, giving it some kind of velocity
-        double velocity = 0;
-        double old_velocity = s->velocities[i];
-        double diff = y - s->heights[i];
-
-        velocity = FFSIGN(diff) * pow(diff, 2.0);
-
-        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
-            velocity = velocity * 0.1;
-        }
-
-        s->velocities[i] = velocity;
-        s->heights[i] += velocity;
-        s->heights[i] = av_clipd(s->heights[i], 0, 1);
+//        double velocity = 0;
+//        double old_velocity = s->velocities[i];
+//        double diff = y - s->heights[i];
+//
+//        velocity = FFSIGN(diff) * pow(diff, 2.0);
+//
+//        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
+//            velocity = velocity * 0.1;
+//        }
+//
+//        s->velocities[i] = velocity;
+//        s->heights[i] += velocity;
+//        s->heights[i] = av_clipd(s->heights[i], 0, 1);
     }
 
-//    av_log(ctx, AV_LOG_ERROR, "first height is %d\n", s->heights[0]);
+//    av_log(ctx, AV_LOG_ERROR, "first height is %0.2f\n", s->heights[0]);
 
     return 0;
 }
@@ -183,10 +186,14 @@ static int filter_audio_frame(AVFilterLink *inlink, AVFrame *in)
     int consumed = 0;
     int ret = 0;
 
-//    if (s->pts == AV_NOPTS_VALUE)
-//        s->pts = in->pts - av_audio_fifo_size(s->fifo);
+    if (s->pts == AV_NOPTS_VALUE)
+        s->pts = in->pts - av_audio_fifo_size(s->fifo);
 
-    av_audio_fifo_write(s->fifo, (void **)in->extended_data, in->nb_samples);
+    ret = av_audio_fifo_write(s->fifo, (void **)in->extended_data, in->nb_samples);
+//    av_log(ctx, AV_LOG_ERROR, "nb_samples=%d\n", in->nb_samples);
+    if (ret < 0)
+        goto fail;
+
     while (av_audio_fifo_size(s->fifo) >= s->win_size) {
         fin = ff_get_audio_buffer(inlink, s->win_size);
         if (!fin) {
@@ -194,7 +201,7 @@ static int filter_audio_frame(AVFilterLink *inlink, AVFrame *in)
             goto fail;
         }
 
-//        fin->pts = s->pts + consumed;
+        fin->pts = s->pts + consumed;
         consumed += s->hop_size;
         ret = av_audio_fifo_peek(s->fifo, (void **)fin->extended_data, s->win_size);
         if (ret < 0)
@@ -208,8 +215,8 @@ static int filter_audio_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
     fail:
-        // frame will be freed by framesync i think
-//    s->pts = AV_NOPTS_VALUE;
+    s->pts = AV_NOPTS_VALUE;
+    // frame will be freed by framesync i think
 //    av_frame_free(&fin);
 //    av_frame_free(&in);
     return ret;
@@ -401,12 +408,12 @@ static int process_fs_frame(struct FFFrameSync *fs) {
     const int depth = desc->comp[0].depth;
     const int pixsize = (depth+7)/8;
 
-    // TODO: make these properties on the filter
-    const int max_radius = 5;
-    const int max_power = 5;
+    // TODO: make these properties on the filter?
+    const int max_radius = 20;
+    const int max_power = 20;
 
-    if ((ret = ff_framesync_get_frame(&s->fs, 0, &audio,   0)) < 0 ||
-        (ret = ff_framesync_get_frame(&s->fs, 1, &video, 0)) < 0)
+    if ((ret = ff_framesync_get_frame(&s->fs, AUDIO, &audio,   0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, VIDEO, &video, 0)) < 0)
         return ret;
 
     // more values for boxblur--can only initialize these after getting video frame from framesync
@@ -426,7 +433,7 @@ static int process_fs_frame(struct FFFrameSync *fs) {
         av_frame_copy_props(out, video);
         out->format = video->format;
 
-        filter_audio_frame(ctx->inputs[0], audio);
+        filter_audio_frame(ctx->inputs[AUDIO], audio);
 
         const int BASS_BANDS = 5;
         double sum = 0;
@@ -438,12 +445,13 @@ static int process_fs_frame(struct FFFrameSync *fs) {
         int radius = (int) (max_radius * bass_average);
         int power = (int) (max_power * bass_average);
 
+        av_log(ctx, AV_LOG_DEBUG, "bass average was %0.2f; third band was %0.2f; radius=%d, power=%d\n", bass_average, s->heights[2], radius, power);
+
         av_assert0(video->width == out->width);
         av_assert0(video->height == out->height);
 
-        av_frame_ref(out, video);
-
         // Allocate temp buffer for blur function if needed
+        // This was done in config_input in vf_boxblur, so maybe move it to such a function here eventually?
         if (s->temp[0] == NULL || s->temp[1] == NULL)
             if (!(s->temp[0] = av_malloc(2*FFMAX(videolink->w, videolink->h))) ||
                 !(s->temp[1] = av_malloc(2*FFMAX(videolink->w, videolink->h))))
@@ -467,17 +475,16 @@ static int process_fs_frame(struct FFFrameSync *fs) {
     return ff_filter_frame(outlink, out);
 }
 
+static av_cold int init(AVFilterContext *ctx)
+{
+    AudioblurContext *s = ctx->priv;
 
+    s->pts = AV_NOPTS_VALUE;
 
-//static av_cold int init(AVFilterContext *ctx)
-//{
-//    AudioblurContext *s = ctx->priv;
-//
-//    s->dinput.process = blend_frame;
-//    return 0;
-//}
+    return 0;
+}
 
-static int query_formats(AVFilterContext *ctx)
+static int query_video_formats(AVFilterContext *ctx)
 {
     static const enum AVPixelFormat pix_fmts[] = {
             AV_PIX_FMT_YUVA444P, AV_PIX_FMT_YUVA422P, AV_PIX_FMT_YUVA420P,
@@ -494,6 +501,51 @@ static int query_formats(AVFilterContext *ctx)
     if (!fmts_list)
         return AVERROR(ENOMEM);
     return ff_set_common_formats(ctx, fmts_list);
+}
+
+static int query_audio_formats(AVFilterContext *ctx)
+{
+    AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
+    AVFilterLink *inlink = ctx->inputs[0];
+    AVFilterLink *outlink = ctx->outputs[0];
+    static const enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_NONE };
+    static const enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_RGBA, AV_PIX_FMT_NONE };
+    int ret;
+
+    /* set input audio formats */
+    formats = ff_make_format_list(sample_fmts);
+    if ((ret = ff_formats_ref(formats, &inlink->out_formats)) < 0)
+        return ret;
+
+    layouts = ff_all_channel_layouts();
+    if ((ret = ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts)) < 0)
+        return ret;
+
+    formats = ff_all_samplerates();
+    if ((ret = ff_formats_ref(formats, &inlink->out_samplerates)) < 0)
+        return ret;
+
+    /* set output video format */
+    formats = ff_make_format_list(pix_fmts);
+    if ((ret = ff_formats_ref(formats, &outlink->in_formats)) < 0)
+        return ret;
+
+    return 0;
+}
+
+static int query_formats(AVFilterContext *ctx) {
+    int ret;
+
+    ret = query_video_formats(ctx);
+    if (ret < 0)
+        return ret;
+
+    ret = query_audio_formats(ctx);
+    if (ret < 0)
+        return ret;
+
+    return 0;
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -638,7 +690,7 @@ static int request_frame(AVFilterLink *outlink)
 static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
 {
     AudioblurContext *s = inlink->dst->priv;
-//    return ff_dualinput_filter_frame(&s->dinput, inlink, buf);
+
     return ff_framesync_filter_frame(&s->fs, inlink, buf);
 }
 
@@ -668,7 +720,7 @@ static const AVFilterPad audioblur_outputs[] = {
 AVFilter ff_avf_audioblur = {
         .name = "audioblur",
         .description = NULL_IF_CONFIG_SMALL("Blur video frame based on the low-band frequencies of co-timed audio frames."),
-//        .init = init,
+        .init = init,
         .uninit = uninit,
         .priv_size = sizeof(AudioblurContext),
         .query_formats = query_formats,
