@@ -222,120 +222,151 @@ static int filter_audio_frame(AVFilterLink *inlink, AVFrame *in)
     return ret;
 }
 
-/* Naive boxblur would sum source pixels from x-radius .. x+radius
- * for destination pixel x. That would be O(radius*width).
- * If you now look at what source pixels represent 2 consecutive
- * output pixels, then you see they are almost identical and only
- * differ by 2 pixels, like:
- * src0       111111111
- * dst0           1
- * src1        111111111
- * dst1            1
- * src0-src1  1       -1
- * so when you know one output pixel you can find the next by just adding
- * and subtracting 1 input pixel.
- * The following code adopts this faster variant.
- */
-#define BLUR(type, depth)                                                   \
-static inline void blur ## depth(type *dst, int dst_step, const type *src,  \
-                                 int src_step, int len, int radius)         \
-{                                                                           \
-    const int length = radius*2 + 1;                                        \
-    const int inv = ((1<<16) + length/2)/length;                            \
-    int x, sum = src[radius*src_step];                                      \
-                                                                            \
-    for (x = 0; x < radius; x++)                                            \
-        sum += src[x*src_step]<<1;                                          \
-                                                                            \
-    sum = sum*inv + (1<<15);                                                \
-                                                                            \
-    for (x = 0; x <= radius; x++) {                                         \
-        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
-        dst[x*dst_step] = sum>>16;                                          \
-    }                                                                       \
-                                                                            \
-    for (; x < len-radius; x++) {                                           \
-        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
-        dst[x*dst_step] = sum >>16;                                         \
-    }                                                                       \
-                                                                            \
-    for (; x < len; x++) {                                                  \
-        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
-        dst[x*dst_step] = sum>>16;                                          \
-    }                                                                       \
+static inline uint8_t get(const uint8_t *buf, int buf_linesize, int x, int y) {
+    return *(buf + y * buf_linesize + x/* * pixsize */);
 }
 
-BLUR(uint8_t,   8)
-BLUR(uint16_t, 16)
-
-#undef BLUR
-
-static inline void blur(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
-                        int len, int radius, int pixsize)
+static inline void depthblur(AVFilterContext *ctx, uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize, int w, int h, double amount, int radius)
 {
-    if (pixsize == 1) blur8 (dst, dst_step   , src, src_step   , len, radius);
-    else              blur16((uint16_t*)dst, dst_step>>1, (const uint16_t*)src, src_step>>1, len, radius);
-}
+    int x, y, i, j;
+    const int NUM_OTHER_PIXELS = (2 * radius + 1) * (2 * radius + 1) - 1;
+    for (x = radius; x < w - radius; x++) {
+        for (y = radius; y < h - radius; y++) {
+            uint8_t current = get(src, src_linesize, x, y);
 
-static inline void blur_power(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
-                              int len, int radius, int power, uint8_t *temp[2], int pixsize)
-{
-    uint8_t *a = temp[0], *b = temp[1];
+            int sum = 0;
+            for (i = x - radius; i <= x + radius; i++) {
+                for (j = y - radius; j <= y + radius; j++) {
+                    uint8_t other_pixel = get(src, src_linesize, i, j);
+//                    av_log(ctx, AV_LOG_INFO, "adding %d to sum (%d)\n", other_pixel, sum);
+                    sum += other_pixel * other_pixel;
+                }
+            }
+            double other = sqrt((double) sum / NUM_OTHER_PIXELS);
 
-    if (radius && power) {
-        blur(a, pixsize, src, src_step, len, radius, pixsize);
-        for (; power > 2; power--) {
-            uint8_t *c;
-            blur(b, pixsize, a, pixsize, len, radius, pixsize);
-            c = a; a = b; b = c;
+//            av_log(ctx, AV_LOG_INFO, "blending %0.2f of %d (current) with %0.2f of %0.2f (other)\n", 1 - amount, current, amount, other);
+
+            uint8_t result = (uint8_t) ((1 - amount) * current + amount * other);
+
+            *(dst + y * dst_linesize + x) = result;
         }
-        if (power > 1) {
-            blur(dst, dst_step, a, pixsize, len, radius, pixsize);
-        } else {
-            int i;
-            if (pixsize == 1) {
-                for (i = 0; i < len; i++)
-                    dst[i*dst_step] = a[i];
-            } else
-                for (i = 0; i < len; i++)
-                    *(uint16_t*)(dst + i*dst_step) = ((uint16_t*)a)[i];
-        }
-    } else {
-        int i;
-        if (pixsize == 1) {
-            for (i = 0; i < len; i++)
-                dst[i*dst_step] = src[i*src_step];
-        } else
-            for (i = 0; i < len; i++)
-                *(uint16_t*)(dst + i*dst_step) = *(uint16_t*)(src + i*src_step);
     }
 }
-
-static void hblur(uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize,
-                  int w, int h, int radius, int power, uint8_t *temp[2], int pixsize)
-{
-    int y;
-
-    if (radius == 0 && dst == src)
-        return;
-
-    for (y = 0; y < h; y++)
-        blur_power(dst + y*dst_linesize, pixsize, src + y*src_linesize, pixsize,
-                   w, radius, power, temp, pixsize);
-}
-
-static void vblur(uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize,
-                  int w, int h, int radius, int power, uint8_t *temp[2], int pixsize)
-{
-    int x;
-
-    if (radius == 0 && dst == src)
-        return;
-
-    for (x = 0; x < w; x++)
-        blur_power(dst + x*pixsize, dst_linesize, src + x*pixsize, src_linesize,
-                   h, radius, power, temp, pixsize);
-}
+//
+///* Naive boxblur would sum source pixels from x-radius .. x+radius
+// * for destination pixel x. That would be O(radius*width).
+// * If you now look at what source pixels represent 2 consecutive
+// * output pixels, then you see they are almost identical and only
+// * differ by 2 pixels, like:
+// * src0       111111111
+// * dst0           1
+// * src1        111111111
+// * dst1            1
+// * src0-src1  1       -1
+// * so when you know one output pixel you can find the next by just adding
+// * and subtracting 1 input pixel.
+// * The following code adopts this faster variant.
+// */
+//#define BLUR(type, depth)                                                   \
+//static inline void blur ## depth(type *dst, int dst_step, const type *src,  \
+//                                 int src_step, int len, int radius)         \
+//{                                                                           \
+//    const int length = radius*2 + 1;                                        \
+//    const int inv = ((1<<16) + length/2)/length;                            \
+//    int x, sum = src[radius*src_step];                                      \
+//                                                                            \
+//    for (x = 0; x < radius; x++)                                            \
+//        sum += src[x*src_step]<<1;                                          \
+//                                                                            \
+//    sum = sum*inv + (1<<15);                                                \
+//                                                                            \
+//    for (x = 0; x <= radius; x++) {                                         \
+//        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
+//        dst[x*dst_step] = sum>>16;                                          \
+//    }                                                                       \
+//                                                                            \
+//    for (; x < len-radius; x++) {                                           \
+//        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
+//        dst[x*dst_step] = sum >>16;                                         \
+//    }                                                                       \
+//                                                                            \
+//    for (; x < len; x++) {                                                  \
+//        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
+//        dst[x*dst_step] = sum>>16;                                          \
+//    }                                                                       \
+//}
+//
+//BLUR(uint8_t,   8)
+//BLUR(uint16_t, 16)
+//
+//#undef BLUR
+//
+//static inline void blur(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
+//                        int len, int radius, int pixsize)
+//{
+//    if (pixsize == 1) blur8 (dst, dst_step   , src, src_step   , len, radius);
+//    else              blur16((uint16_t*)dst, dst_step>>1, (const uint16_t*)src, src_step>>1, len, radius);
+//}
+//
+//static inline void blur_power(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
+//                              int len, int radius, int power, uint8_t *temp[2], int pixsize)
+//{
+//    uint8_t *a = temp[0], *b = temp[1];
+//
+//    if (radius && power) {
+//        blur(a, pixsize, src, src_step, len, radius, pixsize);
+//        for (; power > 2; power--) {
+//            uint8_t *c;
+//            blur(b, pixsize, a, pixsize, len, radius, pixsize);
+//            c = a; a = b; b = c;
+//        }
+//        if (power > 1) {
+//            blur(dst, dst_step, a, pixsize, len, radius, pixsize);
+//        } else {
+//            int i;
+//            if (pixsize == 1) {
+//                for (i = 0; i < len; i++)
+//                    dst[i*dst_step] = a[i];
+//            } else
+//                for (i = 0; i < len; i++)
+//                    *(uint16_t*)(dst + i*dst_step) = ((uint16_t*)a)[i];
+//        }
+//    } else {
+//        int i;
+//        if (pixsize == 1) {
+//            for (i = 0; i < len; i++)
+//                dst[i*dst_step] = src[i*src_step];
+//        } else
+//            for (i = 0; i < len; i++)
+//                *(uint16_t*)(dst + i*dst_step) = *(uint16_t*)(src + i*src_step);
+//    }
+//}
+//
+//static void hblur(uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize,
+//                  int w, int h, int radius, int power, uint8_t *temp[2], int pixsize)
+//{
+//    int y;
+//
+//    if (radius == 0 && dst == src)
+//        return;
+//
+//    for (y = 0; y < h; y++)
+//        blur_power(dst + y*dst_linesize, pixsize, src + y*src_linesize, pixsize,
+//                   w, radius, power, temp, pixsize);
+//}
+//
+//static void vblur(uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize,
+//                  int w, int h, int radius, int power, uint8_t *temp[2], int pixsize)
+//{
+//    int x;
+//
+//    if (radius == 0 && dst == src)
+//        return;
+//
+//    for (x = 0; x < w; x++)
+//        blur_power(dst + x*pixsize, dst_linesize, src + x*pixsize, src_linesize,
+//                   h, radius, power, temp, pixsize);
+//}
 
 static int process_fs_frame(struct FFFrameSync *fs) {
     AVFilterContext *ctx = fs->parent;
@@ -401,18 +432,26 @@ static int process_fs_frame(struct FFFrameSync *fs) {
                 !(s->temp[1] = av_malloc(2*FFMAX(videolink->w, videolink->h))))
                 return AVERROR(ENOMEM);
 
-        for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
-            hblur(out->data[plane], out->linesize[plane],
-                  video->data[plane], video->linesize[plane],
-                  w[plane], h[plane], radius, power,
-                  s->temp, pixsize);
+        for (plane = 0; plane < 1 && video->data[plane] && video->linesize[plane]; plane++) {
+            depthblur(ctx, out->data[plane], out->linesize[plane], video->data[plane], video->linesize[plane], w[plane], h[plane], 1, 3);
         }
-        for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
-            vblur(out->data[plane], out->linesize[plane],
-                  out->data[plane], out->linesize[plane],
-                  w[plane], h[plane], radius, power,
-                  s->temp, pixsize);
+
+        for (plane = 1; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
+            depthblur(ctx, out->data[plane], out->linesize[plane], video->data[plane], video->linesize[plane], w[plane], h[plane], 0, 1);
         }
+//        for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
+//
+//            hblur(out->data[plane], out->linesize[plane],
+//                  video->data[plane], video->linesize[plane],
+//                  w[plane], h[plane], radius, power,
+//                  s->temp, pixsize);
+//        }
+//        for (plane = 0; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
+//            vblur(out->data[plane], out->linesize[plane],
+//                  out->data[plane], out->linesize[plane],
+//                  w[plane], h[plane], radius, power,
+//                  s->temp, pixsize);
+//        }
     }
     out->pts = av_rescale_q(audio->pts, s->fs.time_base, outlink->time_base);
 
