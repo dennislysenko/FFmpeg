@@ -270,62 +270,6 @@ BLUR(uint16_t, 16)
 
 #undef BLUR
 
-//static inline void blur8(uint8_t *dst, int dst_step, const uint8_t *src,  \
-//                                 int src_step, int len, int radius)         \
-//{                                                                           \
-//    const int length = radius*2 + 1;                                        \
-//    const int inv = ((1<<16) + length/2)/length;                            \
-//    int x, sum = src[radius*src_step];                                      \
-//                                                                            \
-//    for (x = 0; x < radius; x++)                                            \
-//        sum += src[x*src_step]<<1;                                          \
-//                                                                            \
-//    sum = sum*inv + (1<<15);                                                \
-//                                                                            \
-//    for (x = 0; x <= radius; x++) {                                         \
-//        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
-//        dst[x*dst_step] = sum>>16;                                          \
-//    }                                                                       \
-//                                                                            \
-//    for (; x < len-radius; x++) {                                           \
-//        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
-//        dst[x*dst_step] = sum >>16;                                         \
-//    }                                                                       \
-//                                                                            \
-//    for (; x < len; x++) {                                                  \
-//        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
-//        dst[x*dst_step] = sum>>16;                                          \
-//    }                                                                       \
-//}
-//
-//static inline void blur16(uint16_t *dst, int dst_step, const uint16_t *src,  \
-//                                 int src_step, int len, int radius)         \
-//{                                                                           \
-//    const int length = radius*2 + 1;                                        \
-//    const int inv = ((1<<16) + length/2)/length;                            \
-//    int x, sum = src[radius*src_step];                                      \
-//                                                                            \
-//    for (x = 0; x < radius; x++)                                            \
-//        sum += src[x*src_step]<<1;                                          \
-//                                                                            \
-//    sum = sum*inv + (1<<15);                                                \
-//                                                                            \
-//    for (x = 0; x <= radius; x++) {                                         \
-//        sum += (src[(radius+x)*src_step] - src[(radius-x)*src_step])*inv;   \
-//        dst[x*dst_step] = sum>>16;                                          \
-//    }                                                                       \
-//                                                                            \
-//    for (; x < len-radius; x++) {                                           \
-//        sum += (src[(radius+x)*src_step] - src[(x-radius-1)*src_step])*inv; \
-//        dst[x*dst_step] = sum >>16;                                         \
-//    }                                                                       \
-//                                                                            \
-//    for (; x < len; x++) {                                                  \
-//        sum += (src[(2*len-radius-x-1)*src_step] - src[(x-radius-1)*src_step])*inv; \
-//        dst[x*dst_step] = sum>>16;                                          \
-//    }                                                                       \
-//}
-
 static inline void blur(uint8_t *dst, int dst_step, const uint8_t *src, int src_step,
                         int len, int radius, int pixsize)
 {
@@ -443,7 +387,7 @@ static int process_fs_frame(struct FFFrameSync *fs) {
         double bass_average = sum / BASS_BANDS;
 
         int radius = (int) (max_radius * bass_average);
-        int power = (int) (max_power * bass_average);
+        int power = 3;//(int) (max_power * bass_average);
 
         av_log(ctx, AV_LOG_DEBUG, "bass average was %0.2f; third band was %0.2f; radius=%d, power=%d\n", bass_average, s->heights[2], radius, power);
 
