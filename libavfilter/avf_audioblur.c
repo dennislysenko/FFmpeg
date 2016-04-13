@@ -400,8 +400,10 @@ static int process_fs_frame(struct FFFrameSync *fs) {
     s->vsub = desc->log2_chroma_h;
     const int depth = desc->comp[0].depth;
     const int pixsize = (depth+7)/8;
-    const int radius = 1;
-    const int power = 1;
+
+    // TODO: make these properties on the filter
+    const int max_radius = 5;
+    const int max_power = 5;
 
     if ((ret = ff_framesync_get_frame(&s->fs, 0, &audio,   0)) < 0 ||
         (ret = ff_framesync_get_frame(&s->fs, 1, &video, 0)) < 0)
@@ -426,12 +428,20 @@ static int process_fs_frame(struct FFFrameSync *fs) {
 
         filter_audio_frame(ctx->inputs[0], audio);
 
+        const int BASS_BANDS = 5;
+        double sum = 0;
+        for (int band = 0; band < BASS_BANDS; band++) {
+            sum += s->heights[band];
+        }
+        double bass_average = sum / BASS_BANDS;
+
+        int radius = (int) (max_radius * bass_average);
+        int power = (int) (max_power * bass_average);
+
         av_assert0(video->width == out->width);
         av_assert0(video->height == out->height);
 
         av_frame_ref(out, video);
-
-
 
         // Allocate temp buffer for blur function if needed
         if (s->temp[0] == NULL || s->temp[1] == NULL)
