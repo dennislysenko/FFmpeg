@@ -133,7 +133,7 @@ static int read_freqs(AVFilterLink *inlink, AVFrame *in)
             }
         }
 
-        s->heights[i] = y;
+//        s->heights[i] = y;
 //        av_log(ctx, AV_LOG_ERROR, "setting peak %d to %0.2f\n", i, y);
 
         // gradual falling:
@@ -149,10 +149,10 @@ static int read_freqs(AVFilterLink *inlink, AVFrame *in)
          */
 
         // Getting it onto a more moving scale
-//        if (y == 0)
-//            y = 0;
-//        else
-//            y = av_clipf(logf((float)y * 256.0f) / 8.0f, 0, 1);
+        if (y == 0)
+            y = 0;
+        else
+            y = av_clipf(logf((float)y * 256.0f) / 8.0f, 0, 1);
 
         // Making it centered and less drastic
 //            y = (y * 0.5f) + 0.25f;
@@ -171,6 +171,7 @@ static int read_freqs(AVFilterLink *inlink, AVFrame *in)
 //        s->velocities[i] = velocity;
 //        s->heights[i] += velocity;
 //        s->heights[i] = av_clipd(s->heights[i], 0, 1);
+        s->heights[i] = y;
     }
 
 //    av_log(ctx, AV_LOG_ERROR, "first height is %0.2f\n", s->heights[0]);
@@ -226,11 +227,18 @@ static inline uint8_t get(const uint8_t *buf, int buf_linesize, int x, int y) {
     return *(buf + y * buf_linesize + x/* * pixsize */);
 }
 
-static inline int sumrow(const uint8_t *buf, int buf_linesize, int center_x, int row_y, int radius) {
+static inline int sumrow(const uint8_t *buf, int buf_linesize, int center_x, int row_y, int radius, int w, int h) {
     int x, sum;
     sum = 0;
-    for (x = center_x - radius; x <= center_x + radius; x++) {
-        // TODO: edge cases
+    int start = center_x - radius;
+    if (start < 0) {
+        start = 0;
+    }
+    int end = center_x + radius;
+    if (end > h - 1) {
+        end = h - 1;
+    }
+    for (x = start; x <= end; x++) {
         sum += get(buf, buf_linesize, x, row_y);
     }
     return sum;
@@ -238,19 +246,19 @@ static inline int sumrow(const uint8_t *buf, int buf_linesize, int center_x, int
 
 static inline void depthblur(AVFilterContext *ctx, uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize, int w, int h, double amount, int radius)
 {
-    int x, y, i, j;
+    int x, y;
     const int NUM_OTHER_PIXELS = (2 * radius + 1) * (2 * radius + 1) - 1;
-    for (x = radius; x < w - radius; x++) {
+    for (x = 0; x < w; x++) {
         int running = 0;
 
         for (y = 0; y < h + radius; y++) {
-            running += sumrow(src, src_linesize, x, y, radius);
+            running += sumrow(src, src_linesize, x, y, radius, w, h);
 
             int sum_being_removed;
             // we're basically doing a moving window average, so as we move down a row the row 2r-1 up gets removed from the running sum
             int row_being_removed = y - 2 * radius - 1;
             if (row_being_removed >= 0) {
-                sum_being_removed = sumrow(src, src_linesize, x, row_being_removed, radius);
+                sum_being_removed = sumrow(src, src_linesize, x, row_being_removed, radius, w, h);
             } else {
                 sum_being_removed = 0;
             }
@@ -437,7 +445,7 @@ static int process_fs_frame(struct FFFrameSync *fs) {
         int radius = (int) (max_radius * bass_average);
         int power = 3;//(int) (max_power * bass_average);
 
-        av_log(ctx, AV_LOG_DEBUG, "bass average was %0.2f; third band was %0.2f; radius=%d, power=%d\n", bass_average, s->heights[2], radius, power);
+//        av_log(ctx, AV_LOG_INFO, "bass average was %0.2f\n", bass_average);
 
         av_assert0(video->width == out->width);
         av_assert0(video->height == out->height);
@@ -449,8 +457,9 @@ static int process_fs_frame(struct FFFrameSync *fs) {
                 !(s->temp[1] = av_malloc(2*FFMAX(videolink->w, videolink->h))))
                 return AVERROR(ENOMEM);
 
+        double blur_depth = av_clipd(bass_average * 3, 0, 1);
         for (plane = 0; plane < 1 && video->data[plane] && video->linesize[plane]; plane++) {
-            depthblur(ctx, out->data[plane], out->linesize[plane], video->data[plane], video->linesize[plane], w[plane], h[plane], 1, 5);
+            depthblur(ctx, out->data[plane], out->linesize[plane], video->data[plane], video->linesize[plane], w[plane], h[plane], blur_depth, 5);
         }
 
         for (plane = 1; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
