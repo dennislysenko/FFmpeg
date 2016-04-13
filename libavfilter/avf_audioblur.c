@@ -226,29 +226,46 @@ static inline uint8_t get(const uint8_t *buf, int buf_linesize, int x, int y) {
     return *(buf + y * buf_linesize + x/* * pixsize */);
 }
 
+static inline int sumrow(const uint8_t *buf, int buf_linesize, int center_x, int row_y, int radius) {
+    int x, sum;
+    sum = 0;
+    for (x = center_x - radius; x <= center_x + radius; x++) {
+        // TODO: edge cases
+        sum += get(buf, buf_linesize, x, row_y);
+    }
+    return sum;
+}
+
 static inline void depthblur(AVFilterContext *ctx, uint8_t *dst, int dst_linesize, const uint8_t *src, int src_linesize, int w, int h, double amount, int radius)
 {
     int x, y, i, j;
     const int NUM_OTHER_PIXELS = (2 * radius + 1) * (2 * radius + 1) - 1;
     for (x = radius; x < w - radius; x++) {
-        for (y = radius; y < h - radius; y++) {
-            uint8_t current = get(src, src_linesize, x, y);
+        int running = 0;
 
-            int sum = 0;
-            for (i = x - radius; i <= x + radius; i++) {
-                for (j = y - radius; j <= y + radius; j++) {
-                    uint8_t other_pixel = get(src, src_linesize, i, j);
-//                    av_log(ctx, AV_LOG_INFO, "adding %d to sum (%d)\n", other_pixel, sum);
-                    sum += other_pixel * other_pixel;
-                }
+        for (y = 0; y < h + radius; y++) {
+            running += sumrow(src, src_linesize, x, y, radius);
+
+            int sum_being_removed;
+            // we're basically doing a moving window average, so as we move down a row the row 2r-1 up gets removed from the running sum
+            int row_being_removed = y - 2 * radius - 1;
+            if (row_being_removed >= 0) {
+                sum_being_removed = sumrow(src, src_linesize, x, row_being_removed, radius);
+            } else {
+                sum_being_removed = 0;
             }
-            double other = sqrt((double) sum / NUM_OTHER_PIXELS);
+            running -= sum_being_removed;
 
-//            av_log(ctx, AV_LOG_INFO, "blending %0.2f of %d (current) with %0.2f of %0.2f (other)\n", 1 - amount, current, amount, other);
+            int row_being_written = y - radius;
+            if (row_being_written >= 0) {
+                uint8_t value_being_set = get(src, src_linesize, x, row_being_written);
+                double other = (double) (running - value_being_set) / NUM_OTHER_PIXELS;
 
-            uint8_t result = (uint8_t) ((1 - amount) * current + amount * other);
+//                av_log(ctx, AV_LOG_INFO, "blending %0.2f of %d (value_being_set) with %0.2f of %0.2f (other)\n", 1 - amount, value_being_set, amount, other);
 
-            *(dst + y * dst_linesize + x) = result;
+                uint8_t result = (uint8_t)((1 - amount) * value_being_set + amount * other);
+                *(dst + row_being_written * dst_linesize + x) = result;
+            }
         }
     }
 }
@@ -433,7 +450,7 @@ static int process_fs_frame(struct FFFrameSync *fs) {
                 return AVERROR(ENOMEM);
 
         for (plane = 0; plane < 1 && video->data[plane] && video->linesize[plane]; plane++) {
-            depthblur(ctx, out->data[plane], out->linesize[plane], video->data[plane], video->linesize[plane], w[plane], h[plane], 1, 3);
+            depthblur(ctx, out->data[plane], out->linesize[plane], video->data[plane], video->linesize[plane], w[plane], h[plane], 1, 5);
         }
 
         for (plane = 1; plane < 4 && video->data[plane] && video->linesize[plane]; plane++) {
