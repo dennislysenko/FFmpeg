@@ -2879,7 +2879,7 @@ static int try_decode_frame(AVFormatContext *s, AVStream *st, AVPacket *avpkt,
         goto fail;
     }
 
-    if (avctx->codec->caps_internal & FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM) {
+    if (avpriv_codec_get_cap_skip_frame_fill_param(avctx->codec)) {
         do_skip_frame = 1;
         skip_frame = avctx->skip_frame;
         avctx->skip_frame = AVDISCARD_ALL;
@@ -2891,27 +2891,27 @@ static int try_decode_frame(AVFormatContext *s, AVStream *st, AVPacket *avpkt,
             (!st->codec_info_nb_frames &&
              (avctx->codec->capabilities & AV_CODEC_CAP_CHANNEL_CONF)))) {
         got_picture = 0;
-        switch (avctx->codec_type) {
-        case AVMEDIA_TYPE_VIDEO:
-            ret = avcodec_decode_video2(avctx, frame,
-                                        &got_picture, &pkt);
-            break;
-        case AVMEDIA_TYPE_AUDIO:
-            ret = avcodec_decode_audio4(avctx, frame, &got_picture, &pkt);
-            break;
-        case AVMEDIA_TYPE_SUBTITLE:
+        if (avctx->codec_type == AVMEDIA_TYPE_VIDEO ||
+            avctx->codec_type == AVMEDIA_TYPE_AUDIO) {
+            ret = avcodec_send_packet(avctx, &pkt);
+            if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
+                break;
+            if (ret >= 0)
+                pkt.size = 0;
+            ret = avcodec_receive_frame(avctx, frame);
+            if (ret >= 0)
+                got_picture = 1;
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+                ret = 0;
+        } else if (avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
             ret = avcodec_decode_subtitle2(avctx, &subtitle,
                                            &got_picture, &pkt);
-            ret = pkt.size;
-            break;
-        default:
-            break;
+            if (ret >= 0)
+                pkt.size = 0;
         }
         if (ret >= 0) {
             if (got_picture)
                 st->nb_decoded_frames++;
-            pkt.data += ret;
-            pkt.size -= ret;
             ret       = got_picture;
         }
     }
@@ -3117,7 +3117,7 @@ int ff_alloc_extradata(AVCodecParameters *par, int size)
     return ret;
 }
 
-int ff_get_extradata(AVCodecParameters *par, AVIOContext *pb, int size)
+int ff_get_extradata(AVFormatContext *s, AVCodecParameters *par, AVIOContext *pb, int size)
 {
     int ret = ff_alloc_extradata(par, size);
     if (ret < 0)
@@ -3126,7 +3126,7 @@ int ff_get_extradata(AVCodecParameters *par, AVIOContext *pb, int size)
     if (ret != size) {
         av_freep(&par->extradata);
         par->extradata_size = 0;
-        av_log(par, AV_LOG_ERROR, "Failed to read extradata of size %d\n", size);
+        av_log(s, AV_LOG_ERROR, "Failed to read extradata of size %d\n", size);
         return ret < 0 ? ret : AVERROR_INVALIDDATA;
     }
 
@@ -3766,7 +3766,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             if (ret < 0)
                 goto find_stream_info_err;
             // The decoder might reduce the video size by the lowres factor.
-            if (st->internal->avctx->lowres && orig_w) {
+            if (av_codec_get_lowres(st->internal->avctx) && orig_w) {
                 st->codecpar->width = orig_w;
                 st->codecpar->height = orig_h;
             }
@@ -3780,8 +3780,8 @@ FF_DISABLE_DEPRECATION_WARNINGS
 
         // The old API (AVStream.codec) "requires" the resolution to be adjusted
         // by the lowres factor.
-        if (st->internal->avctx->lowres && st->internal->avctx->width) {
-            st->codec->lowres = st->internal->avctx->lowres;
+        if (av_codec_get_lowres(st->internal->avctx) && st->internal->avctx->width) {
+            av_codec_set_lowres(st->codec, av_codec_get_lowres(st->internal->avctx));
             st->codec->width = st->internal->avctx->width;
             st->codec->height = st->internal->avctx->height;
             st->codec->coded_width = st->internal->avctx->coded_width;

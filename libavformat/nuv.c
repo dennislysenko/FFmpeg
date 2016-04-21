@@ -87,7 +87,7 @@ static int get_codec_data(AVIOContext *pb, AVStream *vst,
                     av_freep(&vst->codecpar->extradata);
                     vst->codecpar->extradata_size = 0;
                 }
-                if (ff_get_extradata(vst->codecpar, pb, size) < 0)
+                if (ff_get_extradata(NULL, vst->codecpar, pb, size) < 0)
                     return AVERROR(ENOMEM);
                 size = 0;
                 if (!myth)
@@ -195,7 +195,7 @@ static int nuv_header(AVFormatContext *s)
             return AVERROR(ENOMEM);
         ctx->v_id = vst->index;
 
-        ret = av_image_check_size(width, height, 0, ctx);
+        ret = av_image_check_size(width, height, 0, s);
         if (ret < 0)
             return ret;
 

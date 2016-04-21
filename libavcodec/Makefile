@@ -26,6 +26,8 @@ OBJS = allcodecs.o                                                      \
        avpicture.o                                                      \
        bitstream.o                                                      \
        bitstream_filter.o                                               \
+       bitstream_filters.o                                              \
+       bsf.o                                                            \
        codec_desc.o                                                     \
        d3d11va.o                                                        \
        dirac.o                                                          \
@@ -522,6 +524,7 @@ OBJS-$(CONFIG_TMV_DECODER)             += tmv.o cga_data.o
 OBJS-$(CONFIG_TRUEHD_DECODER)          += mlpdec.o mlpdsp.o
 OBJS-$(CONFIG_TRUEMOTION1_DECODER)     += truemotion1.o
 OBJS-$(CONFIG_TRUEMOTION2_DECODER)     += truemotion2.o
+OBJS-$(CONFIG_TRUEMOTION2RT_DECODER)   += truemotion2rt.o
 OBJS-$(CONFIG_TRUESPEECH_DECODER)      += truespeech.o
 OBJS-$(CONFIG_TSCC_DECODER)            += tscc.o msrledec.o
 OBJS-$(CONFIG_TSCC2_DECODER)           += tscc2.o
@@ -810,9 +813,9 @@ OBJS-$(CONFIG_AMR_NB_AT_DECODER)          += audiotoolboxdec.o
 OBJS-$(CONFIG_EAC3_AT_DECODER)            += audiotoolboxdec.o
 OBJS-$(CONFIG_GSM_MS_AT_DECODER)          += audiotoolboxdec.o
 OBJS-$(CONFIG_ILBC_AT_DECODER)            += audiotoolboxdec.o
-OBJS-$(CONFIG_MP1_AT_DECODER)             += audiotoolboxdec.o
-OBJS-$(CONFIG_MP2_AT_DECODER)             += audiotoolboxdec.o
-OBJS-$(CONFIG_MP3_AT_DECODER)             += audiotoolboxdec.o
+OBJS-$(CONFIG_MP1_AT_DECODER)             += audiotoolboxdec.o mpegaudiodecheader.o
+OBJS-$(CONFIG_MP2_AT_DECODER)             += audiotoolboxdec.o mpegaudiodecheader.o
+OBJS-$(CONFIG_MP3_AT_DECODER)             += audiotoolboxdec.o mpegaudiodecheader.o
 OBJS-$(CONFIG_PCM_MULAW_AT_DECODER)       += audiotoolboxdec.o
 OBJS-$(CONFIG_PCM_ALAW_AT_DECODER)        += audiotoolboxdec.o
 OBJS-$(CONFIG_QDMC_AT_DECODER)            += audiotoolboxdec.o

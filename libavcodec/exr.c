@@ -520,7 +520,8 @@ static int huf_decode(const uint64_t *hcode, const HufDec *hdecod,
     uint16_t *outb    = out;
     uint16_t *oe      = out + no;
     const uint8_t *ie = gb->buffer + (nbits + 7) / 8; // input byte size
-    uint8_t cs, s;
+    uint8_t cs;
+    uint16_t s;
     int i, lc = 0;
 
     while (gb->buffer < ie) {
@@ -768,7 +769,7 @@ static int piz_uncompress(EXRContext *s, const uint8_t *src, int ssize,
     if (min_non_zero <= max_non_zero)
         bytestream2_get_buffer(&gb, td->bitmap + min_non_zero,
                                max_non_zero - min_non_zero + 1);
-    memset(td->bitmap + max_non_zero, 0, BITMAP_SIZE - max_non_zero);
+    memset(td->bitmap + max_non_zero + 1, 0, BITMAP_SIZE - max_non_zero - 1);
 
     maxval = reverse_lut(td->bitmap, td->lut);
 
@@ -1483,6 +1484,8 @@ static int decode_header(EXRContext *s)
             continue;
         } else if ((var_size = check_header_variable(s, "tiles",
                                                      "tiledesc", 22)) >= 0) {
+            char tileLevel;
+
             if (!s->is_tile)
                 av_log(s->avctx, AV_LOG_WARNING,
                        "Found tile attribute and scanline flags. Exr will be interpreted as scanline.\n");
@@ -1490,7 +1493,7 @@ static int decode_header(EXRContext *s)
             s->tile_attr.xSize = bytestream2_get_le32(&s->gb);
             s->tile_attr.ySize = bytestream2_get_le32(&s->gb);
 
-            char tileLevel = bytestream2_get_byte(&s->gb);
+            tileLevel = bytestream2_get_byte(&s->gb);
             s->tile_attr.level_mode = tileLevel & 0x0f;
             s->tile_attr.level_round = (tileLevel >> 4) & 0x0f;
 

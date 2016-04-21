@@ -58,13 +58,6 @@
             av_register_codec_parser(&ff_##x##_parser);                 \
     }
 
-#define REGISTER_BSF(X, x)                                              \
-    {                                                                   \
-        extern AVBitStreamFilter ff_##x##_bsf;                          \
-        if (CONFIG_##X##_BSF)                                           \
-            av_register_bitstream_filter(&ff_##x##_bsf);                \
-    }
-
 void avcodec_register_all(void)
 {
     static int initialized;
@@ -317,6 +310,7 @@ void avcodec_register_all(void)
     REGISTER_DECODER(TMV,               tmv);
     REGISTER_DECODER(TRUEMOTION1,       truemotion1);
     REGISTER_DECODER(TRUEMOTION2,       truemotion2);
+    REGISTER_DECODER(TRUEMOTION2RT,     truemotion2rt);
     REGISTER_DECODER(TSCC,              tscc);
     REGISTER_DECODER(TSCC2,             tscc2);
     REGISTER_DECODER(TXD,               txd);
@@ -667,22 +661,4 @@ void avcodec_register_all(void)
     REGISTER_PARSER(VP3,                vp3);
     REGISTER_PARSER(VP8,                vp8);
     REGISTER_PARSER(VP9,                vp9);
-
-    /* bitstream filters */
-    REGISTER_BSF(AAC_ADTSTOASC,         aac_adtstoasc);
-    REGISTER_BSF(CHOMP,                 chomp);
-    REGISTER_BSF(DUMP_EXTRADATA,        dump_extradata);
-    REGISTER_BSF(DCA_CORE,              dca_core);
-    REGISTER_BSF(H264_MP4TOANNEXB,      h264_mp4toannexb);
-    REGISTER_BSF(HEVC_MP4TOANNEXB,      hevc_mp4toannexb);
-    REGISTER_BSF(IMX_DUMP_HEADER,       imx_dump_header);
-    REGISTER_BSF(MJPEG2JPEG,            mjpeg2jpeg);
-    REGISTER_BSF(MJPEGA_DUMP_HEADER,    mjpega_dump_header);
-    REGISTER_BSF(MP3_HEADER_DECOMPRESS, mp3_header_decompress);
-    REGISTER_BSF(MPEG4_UNPACK_BFRAMES,  mpeg4_unpack_bframes);
-    REGISTER_BSF(MOV2TEXTSUB,           mov2textsub);
-    REGISTER_BSF(NOISE,                 noise);
-    REGISTER_BSF(REMOVE_EXTRADATA,      remove_extradata);
-    REGISTER_BSF(TEXT2MOVSUB,           text2movsub);
-    REGISTER_BSF(VP9_SUPERFRAME,        vp9_superframe);
 }
