@@ -296,11 +296,18 @@ static void vis_moving_blob(VisContext *s, AVFrame *out, double frequencies[NB_B
     int bar_index, x, y, x_step, top, bottom;
     double frequency, next_frequency, freq_step;
     const double bar_width = (double) width / NB_BANDS;
-    for (bar_index = 0; bar_index < NB_BANDS - 1; bar_index++) {
+    for (bar_index = 0; bar_index < NB_BANDS; bar_index++) {
         for (x_step = 0; x_step < bar_width; x_step++) {
             x = bar_index * bar_width + x_step;
+
             frequency = frequencies[bar_index];
-            next_frequency = frequencies[bar_index + 1];
+            if (bar_index < NB_BANDS - 1) {
+                next_frequency = frequencies[bar_index + 1];
+            } else {
+                // last bar won't have a next frequency
+                next_frequency = 0;
+            }
+
             freq_step = (next_frequency - frequency) * (x_step / bar_width);
             frequency += freq_step;
 
@@ -440,22 +447,22 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 //            y = (y * 0.5f) + 0.25f;
 
         // Making it less drastic, giving it some kind of velocity
-//        velocity = 0;
-//        old_velocity = s->velocities[i];
-//        old_height = s->heights[i];
-//        diff = y - s->heights[i];
-//
-//        velocity = FFSIGN(diff) * pow(diff, 2.0);
-//
-//        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
-//            velocity = velocity * 0.1;
-//        }
-//
-//        s->velocities[i] = velocity;
-//        s->heights[i] += velocity;
-//        s->heights[i] = av_clipd(s->heights[i], 0, 1);
-        s->velocities[i] = y - s->heights[i];
-        s->heights[i] = y;
+        velocity = 0;
+        old_velocity = s->velocities[i];
+        old_height = s->heights[i];
+        diff = y - s->heights[i];
+
+        velocity = FFSIGN(diff) * fabs(diff * 0.7);
+
+        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
+            velocity = velocity * 0.1;
+        }
+
+        s->velocities[i] = velocity;
+        s->heights[i] += velocity;
+        s->heights[i] = av_clipd(s->heights[i], 0, 1);
+//        s->velocities[i] = y - s->heights[i];
+//        s->heights[i] = y;
     }
 
 
