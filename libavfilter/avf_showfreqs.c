@@ -19,7 +19,6 @@
  */
 
 #include <math.h>
-#include <flam3.h>
 
 #include "libavcodec/avfft.h"
 #include "libavutil/audio_fifo.h"
