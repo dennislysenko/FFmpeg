@@ -173,8 +173,8 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int config_output(AVFilterLink *outlink)
 {
-    av_log(ctx, AV_LOG_ERROR, "config_output.\n");
     AVFilterContext *ctx = outlink->src;
+    av_log(ctx, AV_LOG_ERROR, "config_output.\n");
     AVFilterLink *inlink = ctx->inputs[0];
     VisContext *s = ctx->priv;
     float overlap;
