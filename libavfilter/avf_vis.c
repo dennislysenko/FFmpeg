@@ -37,7 +37,7 @@
 enum ChannelMode    { COMBINED, SEPARATE, NB_CMODES };
 enum FrequencyScale { FS_LINEAR, FS_LOG, FS_RLOG, NB_FSCALES };
 enum AmplitudeScale { AS_LINEAR, AS_SQRT, AS_CBRT, AS_LOG, NB_ASCALES };
-enum Vis { SIMPLE_BARS, PIXEL_BARS, SHAKING_CENTER_BARS, MOVING_BLOB, NB_VIS };
+enum Vis { NONE, SIMPLE_BARS, PIXEL_BARS, SHAKING_CENTER_BARS, MOVING_BLOB, NB_VIS };
 
 #define NB_BANDS 20
 
@@ -75,6 +75,7 @@ static const AVOption vis_options[] = {
     { "size", "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "1024x512"}, 0, 0, FLAGS },
     { "s",    "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "1024x512"}, 0, 0, FLAGS },
     { "mode", "set display mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=SIMPLE_BARS}, 0, NB_VIS-1, FLAGS, "mode" },
+        { "none", "all background", 0, AV_OPT_TYPE_CONST, {.i64=NONE}, 0, 0, FLAGS, "mode" },
         { "simple_bars", "simple 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=SIMPLE_BARS}, 0, 0, FLAGS, "mode" },
         { "pixel_bars", "pixellized 20-band bars", 0, AV_OPT_TYPE_CONST, {.i64=PIXEL_BARS}, 0, 0, FLAGS, "mode" },
         { "shaking_center_bars", "bars in the center that beat in time", 0, AV_OPT_TYPE_CONST, {.i64=SHAKING_CENTER_BARS}, 0, 0, FLAGS, "mode" },
@@ -365,6 +366,9 @@ static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequenc
     }
 }
 
+static void vis_none(VisContext *s, AVFrame *out, double frequencies[NB_BANDS], int width, int height, uint8_t color[4], double velocities[NB_BANDS], int frame_index) {
+}
+
 static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -471,6 +475,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
 
     switch (s->mode) {
+        case NONE:                 vis = vis_none;                 break;
         case SIMPLE_BARS:          vis = vis_simple_bars;          break;
         case PIXEL_BARS:           vis = vis_pixel_bars;           break;
         case SHAKING_CENTER_BARS:  vis = vis_shaking_center_bars;  break;
