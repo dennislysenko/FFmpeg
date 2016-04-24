@@ -485,8 +485,8 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
-    av_log(ctx, AV_LOG_ERROR, "filter_frame.\n");
     AVFilterContext *ctx = inlink->dst;
+    av_log(ctx, AV_LOG_ERROR, "filter_frame.\n");
     VisContext *s = ctx->priv;
     AVFrame *fin = NULL;
     int consumed = 0;
