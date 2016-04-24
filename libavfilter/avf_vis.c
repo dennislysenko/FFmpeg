@@ -131,6 +131,7 @@ AVFILTER_DEFINE_CLASS(vis);
 
 static int query_formats(AVFilterContext *ctx)
 {
+    av_log(ctx, AV_LOG_ERROR, "query_formats.\n");
     AVFilterFormats *formats = NULL;
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterLink *inlink = ctx->inputs[0];
@@ -162,6 +163,7 @@ static int query_formats(AVFilterContext *ctx)
 
 static av_cold int init(AVFilterContext *ctx)
 {
+    av_log(ctx, AV_LOG_ERROR, "init.\n");
     VisContext *s = ctx->priv;
 
     s->pts = AV_NOPTS_VALUE;
@@ -171,6 +173,7 @@ static av_cold int init(AVFilterContext *ctx)
 
 static int config_output(AVFilterLink *outlink)
 {
+    av_log(ctx, AV_LOG_ERROR, "config_output.\n");
     AVFilterContext *ctx = outlink->src;
     AVFilterLink *inlink = ctx->inputs[0];
     VisContext *s = ctx->priv;
@@ -179,7 +182,7 @@ static int config_output(AVFilterLink *outlink)
 
     s->nb_freq = 1 << (s->fft_bits - 1);
     s->win_size = s->nb_freq << 1;
-    av_log(ctx, AV_LOG_ERROR, "fifo_free in config_output.");
+    av_log(ctx, AV_LOG_ERROR, "fifo_free in config_output.\n");
     av_audio_fifo_free(s->fifo);
     av_fft_end(s->fft);
     s->fft = av_fft_init(s->fft_bits, 0);
@@ -482,6 +485,7 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
+    av_log(ctx, AV_LOG_ERROR, "filter_frame.\n");
     AVFilterContext *ctx = inlink->dst;
     VisContext *s = ctx->priv;
     AVFrame *fin = NULL;
@@ -506,7 +510,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             goto fail;
 
         ret = plot_freqs(inlink, fin);
-        av_log(ctx, AV_LOG_ERROR, "av_frame_free in filter_frame.");
+        av_log(ctx, AV_LOG_ERROR, "av_frame_free in filter_frame.\n");
         av_frame_free(&fin);
         av_audio_fifo_drain(s->fifo, s->hop_size);
         if (ret < 0)
@@ -514,24 +518,24 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
 fail:
-    av_log(ctx, AV_LOG_ERROR, "fail: in filter_frame.");
+    av_log(ctx, AV_LOG_ERROR, "fail: in filter_frame.\n");
     s->pts = AV_NOPTS_VALUE;
-    av_log(ctx, AV_LOG_ERROR, "first frame free.");
+    av_log(ctx, AV_LOG_ERROR, "first frame free.\n");
     av_frame_free(&fin);
-    av_log(ctx, AV_LOG_ERROR, "second frame free.");
+    av_log(ctx, AV_LOG_ERROR, "second frame free.\n");
     av_frame_free(&in);
-    av_log(ctx, AV_LOG_ERROR, "returning.");
+    av_log(ctx, AV_LOG_ERROR, "returning.\n");
     return ret;
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
-    av_log(ctx, AV_LOG_ERROR, "inside uninit.");
+    av_log(ctx, AV_LOG_ERROR, "inside uninit.\n");
 
     VisContext *s = ctx->priv;
     int i;
 
-    av_log(ctx, AV_LOG_ERROR, "fft_end.");
+    av_log(ctx, AV_LOG_ERROR, "fft_end.\n");
     av_fft_end(s->fft);
     for (i = 0; i < s->nb_channels; i++) {
         if (s->fft_data)
@@ -539,16 +543,16 @@ static av_cold void uninit(AVFilterContext *ctx)
         if (s->avg_data)
             av_freep(&s->avg_data[i]);
     }
-    av_log(ctx, AV_LOG_ERROR, "fft_data.");
+    av_log(ctx, AV_LOG_ERROR, "fft_data.\n");
     av_freep(&s->fft_data);
-    av_log(ctx, AV_LOG_ERROR, "avg_data.");
+    av_log(ctx, AV_LOG_ERROR, "avg_data.\n");
     av_freep(&s->avg_data);
-    av_log(ctx, AV_LOG_ERROR, "window_func_lut.");
+    av_log(ctx, AV_LOG_ERROR, "window_func_lut.\n");
     av_freep(&s->window_func_lut);
-    av_log(ctx, AV_LOG_ERROR, "fifo.");
+    av_log(ctx, AV_LOG_ERROR, "fifo.\n");
     av_audio_fifo_free(s->fifo);
 
-    av_log(ctx, AV_LOG_ERROR, "done with uninit.");
+    av_log(ctx, AV_LOG_ERROR, "done with uninit.\n");
 }
 
 static const AVFilterPad vis_inputs[] = {
