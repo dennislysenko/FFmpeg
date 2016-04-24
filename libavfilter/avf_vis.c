@@ -262,7 +262,7 @@ static inline void plot(VisContext *s, AVFrame *out, int x, int y_flipped, uint8
         return;
     }
 
-    int y = s->h - y_flipped;
+    int y = s->h - y_flipped - 1;
 
     if (y < 0) {
         av_log(NULL, AV_LOG_ERROR, "y was subzero in plot in vis (was %d).\n", y);
