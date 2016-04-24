@@ -10,8 +10,7 @@ PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./conf
   --enable-libtheora \
   --enable-libvorbis \
   --enable-libx264 \
-  --enable-nonfree \
-  --disable-optimizations --disable-static --enable-shared --disable-stripping --disable-mmx --disable-ssse3 --enable-debug=3 --extra-cflags="-O0 -fno-inline"
+  --enable-nonfree
 PATH="$HOME/bin:$PATH" make
 make install
 make distclean
