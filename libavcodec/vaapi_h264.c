@@ -196,25 +196,25 @@ static void fill_vaapi_plain_pred_weight_table(H264Context   *h,
     H264SliceContext *sl = &h->slice_ctx[0];
     unsigned int i, j;
 
-    *luma_weight_flag    = sl->luma_weight_flag[list];
-    *chroma_weight_flag  = sl->chroma_weight_flag[list];
+    *luma_weight_flag    = sl->pwt.luma_weight_flag[list];
+    *chroma_weight_flag  = sl->pwt.chroma_weight_flag[list];
 
     for (i = 0; i < sl->ref_count[list]; i++) {
         /* VA API also wants the inferred (default) values, not
            only what is available in the bitstream (7.4.3.2). */
-        if (sl->luma_weight_flag[list]) {
-            luma_weight[i] = sl->luma_weight[i][list][0];
-            luma_offset[i] = sl->luma_weight[i][list][1];
+        if (sl->pwt.luma_weight_flag[list]) {
+            luma_weight[i] = sl->pwt.luma_weight[i][list][0];
+            luma_offset[i] = sl->pwt.luma_weight[i][list][1];
         } else {
-            luma_weight[i] = 1 << sl->luma_log2_weight_denom;
+            luma_weight[i] = 1 << sl->pwt.luma_log2_weight_denom;
             luma_offset[i] = 0;
         }
         for (j = 0; j < 2; j++) {
-            if (sl->chroma_weight_flag[list]) {
-                chroma_weight[i][j] = sl->chroma_weight[i][list][j][0];
-                chroma_offset[i][j] = sl->chroma_weight[i][list][j][1];
+            if (sl->pwt.chroma_weight_flag[list]) {
+                chroma_weight[i][j] = sl->pwt.chroma_weight[i][list][j][0];
+                chroma_offset[i][j] = sl->pwt.chroma_weight[i][list][j][1];
             } else {
-                chroma_weight[i][j] = 1 << sl->chroma_log2_weight_denom;
+                chroma_weight[i][j] = 1 << sl->pwt.chroma_log2_weight_denom;
                 chroma_offset[i][j] = 0;
             }
         }
@@ -330,7 +330,7 @@ static int vaapi_h264_decode_slice(AVCodecContext *avctx,
     slice_param = (VASliceParameterBufferH264 *)ff_vaapi_alloc_slice(vactx, buffer, size);
     if (!slice_param)
         return -1;
-    slice_param->slice_data_bit_offset          = get_bits_count(&sl->gb) + 8; /* bit buffer started beyond nal_unit_type */
+    slice_param->slice_data_bit_offset          = get_bits_count(&sl->gb);
     slice_param->first_mb_in_slice              = (sl->mb_y >> FIELD_OR_MBAFF_PICTURE(h)) * h->mb_width + sl->mb_x;
     slice_param->slice_type                     = ff_h264_get_slice_type(sl);
     slice_param->direct_spatial_mv_pred_flag    = sl->slice_type == AV_PICTURE_TYPE_B ? sl->direct_spatial_mv_pred : 0;
@@ -341,8 +341,8 @@ static int vaapi_h264_decode_slice(AVCodecContext *avctx,
     slice_param->disable_deblocking_filter_idc  = sl->deblocking_filter < 2 ? !sl->deblocking_filter : sl->deblocking_filter;
     slice_param->slice_alpha_c0_offset_div2     = sl->slice_alpha_c0_offset / 2;
     slice_param->slice_beta_offset_div2         = sl->slice_beta_offset     / 2;
-    slice_param->luma_log2_weight_denom         = sl->luma_log2_weight_denom;
-    slice_param->chroma_log2_weight_denom       = sl->chroma_log2_weight_denom;
+    slice_param->luma_log2_weight_denom         = sl->pwt.luma_log2_weight_denom;
+    slice_param->chroma_log2_weight_denom       = sl->pwt.chroma_log2_weight_denom;
 
     fill_vaapi_RefPicList(slice_param->RefPicList0, sl->ref_list[0], sl->list_count > 0 ? sl->ref_count[0] : 0);
     fill_vaapi_RefPicList(slice_param->RefPicList1, sl->ref_list[1], sl->list_count > 1 ? sl->ref_count[1] : 0);

@@ -16,12 +16,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_SVQ3_H
-#define AVCODEC_SVQ3_H
+#include "file.c"
 
-#include <stdint.h>
+#undef printf
 
-void ff_svq3_luma_dc_dequant_idct_c(int16_t *output, int16_t *input, int qp);
-void ff_svq3_add_idct_c(uint8_t *dst, int16_t *block, int stride, int qp, int dc);
+int main(void)
+{
+    uint8_t *buf;
+    size_t size;
+    if (av_file_map("file.c", &buf, &size, 0, NULL) < 0)
+        return 1;
 
-#endif /* AVCODEC_SVQ3_H */
+    buf[0] = 's';
+    printf("%s", buf);
+    av_file_unmap(buf, size);
+    return 0;
+}

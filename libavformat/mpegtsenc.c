@@ -67,7 +67,8 @@ enum {
     MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_RADIO = 0x0A,
     MPEGTS_SERVICE_TYPE_MPEG2_DIGITAL_HDTV           = 0x11,
     MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_SDTV  = 0x16,
-    MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_HDTV  = 0x19
+    MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_HDTV  = 0x19,
+    MPEGTS_SERVICE_TYPE_HEVC_DIGITAL_HDTV            = 0x1F,
 };
 typedef struct MpegTSWrite {
     const AVClass *av_class;
@@ -318,7 +319,12 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
             break;
         case AV_CODEC_ID_MP2:
         case AV_CODEC_ID_MP3:
-            stream_type = STREAM_TYPE_AUDIO_MPEG1;
+            if (   st->codecpar->sample_rate > 0
+                && st->codecpar->sample_rate < 32000) {
+                stream_type = STREAM_TYPE_AUDIO_MPEG2;
+            } else {
+                stream_type = STREAM_TYPE_AUDIO_MPEG1;
+            }
             break;
         case AV_CODEC_ID_AAC:
             stream_type = (ts->flags & MPEGTS_FLAG_AAC_LATM)
@@ -346,6 +352,9 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
             break;
         case AV_CODEC_ID_OPUS:
             stream_type = STREAM_TYPE_PRIVATE_DATA;
+            break;
+        case AV_CODEC_ID_TIMED_ID3:
+            stream_type = STREAM_TYPE_METADATA;
             break;
         default:
             stream_type = STREAM_TYPE_PRIVATE_DATA;
@@ -599,6 +608,13 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
                 *q++ = 'L';
                 *q++ = 'V';
                 *q++ = 'A';
+            } else if (st->codecpar->codec_id == AV_CODEC_ID_TIMED_ID3) {
+                *q++ = 0x5; /* MPEG-2 registration descriptor */
+                *q++ = 4;
+                *q++ = 'I';
+                *q++ = 'D';
+                *q++ = '3';
+                *q++ = ' ';
             }
             break;
         }
@@ -1813,6 +1829,9 @@ static const AVOption options[] = {
       AV_OPT_FLAG_ENCODING_PARAM, "mpegts_service_type" },
     { "advanced_codec_digital_hdtv", "Advanced Codec Digital HDTV.",
       0, AV_OPT_TYPE_CONST, { .i64 = MPEGTS_SERVICE_TYPE_ADVANCED_CODEC_DIGITAL_HDTV }, 0x01, 0xff,
+      AV_OPT_FLAG_ENCODING_PARAM, "mpegts_service_type" },
+    { "hevc_digital_hdtv", "HEVC Digital Television Service.",
+      0, AV_OPT_TYPE_CONST, { .i64 = MPEGTS_SERVICE_TYPE_HEVC_DIGITAL_HDTV }, 0x01, 0xff,
       AV_OPT_FLAG_ENCODING_PARAM, "mpegts_service_type" },
     { "mpegts_pmt_start_pid", "Set the first pid of the PMT.",
       offsetof(MpegTSWrite, pmt_start_pid), AV_OPT_TYPE_INT,

@@ -2281,6 +2281,9 @@ int attribute_align_arg avcodec_decode_audio4(AVCodecContext *avctx,
 
     *got_frame_ptr = 0;
 
+    if (!avctx->codec)
+        return AVERROR(EINVAL);
+
     if (!avctx->codec->decode) {
         av_log(avctx, AV_LOG_ERROR, "This decoder requires using the avcodec_send_packet() API.\n");
         return AVERROR(ENOSYS);
@@ -2290,8 +2293,6 @@ int attribute_align_arg avcodec_decode_audio4(AVCodecContext *avctx,
         av_log(avctx, AV_LOG_ERROR, "invalid packet: NULL data, size != 0\n");
         return AVERROR(EINVAL);
     }
-    if (!avctx->codec)
-        return AVERROR(EINVAL);
     if (avctx->codec->type != AVMEDIA_TYPE_AUDIO) {
         av_log(avctx, AV_LOG_ERROR, "Invalid media type for audio\n");
         return AVERROR(EINVAL);
@@ -2633,7 +2634,9 @@ int avcodec_decode_subtitle2(AVCodecContext *avctx, AVSubtitle *sub,
                 && *got_sub_ptr && sub->num_rects) {
                 const AVRational tb = avctx->pkt_timebase.num ? avctx->pkt_timebase
                                                               : avctx->time_base;
-                ret = convert_sub_to_old_ass_form(sub, avpkt, tb);
+                int err = convert_sub_to_old_ass_form(sub, avpkt, tb);
+                if (err < 0)
+                    ret = err;
             }
 #endif
 
@@ -2784,11 +2787,17 @@ int attribute_align_arg avcodec_send_packet(AVCodecContext *avctx, const AVPacke
 
     if (avctx->codec->send_packet) {
         if (avpkt) {
-            ret = apply_param_change(avctx, (AVPacket *)avpkt);
-            if (ret < 0)
-                return ret;
+            AVPacket tmp = *avpkt;
+            int did_split = av_packet_split_side_data(&tmp);
+            ret = apply_param_change(avctx, &tmp);
+            if (ret >= 0)
+                ret = avctx->codec->send_packet(avctx, &tmp);
+            if (did_split)
+                av_packet_free_side_data(&tmp);
+            return ret;
+        } else {
+            return avctx->codec->send_packet(avctx, NULL);
         }
-        return avctx->codec->send_packet(avctx, avpkt);
     }
 
     // Emulation via old API. Assume avpkt is likely not refcounted, while
@@ -3482,6 +3491,8 @@ static int get_audio_frame_duration(enum AVCodecID id, int sr, int ch, int ba,
         /* calc from sample rate */
         if (id == AV_CODEC_ID_TTA)
             return 256 * sr / 245;
+        else if (id == AV_CODEC_ID_DST)
+            return 588 * sr / 44100;
 
         if (ch > 0) {
             /* calc from sample rate and channels */
@@ -3590,6 +3601,8 @@ static int get_audio_frame_duration(enum AVCodecID id, int sr, int ch, int ba,
                     return blocks * ((ba - 4 * ch) * 2 / ch);
                 case AV_CODEC_ID_ADPCM_MS:
                     return blocks * (2 + (ba - 7 * ch) * 2 / ch);
+                case AV_CODEC_ID_ADPCM_MTAF:
+                    return blocks * (ba - 16) * 2 / ch;
                 }
             }
 
@@ -4164,23 +4177,3 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
 
     return 0;
 }
-
-#ifdef TEST
-int main(void){
-    AVCodec *codec = NULL;
-    int ret = 0;
-    avcodec_register_all();
-
-    while (codec = av_codec_next(codec)) {
-        if (av_codec_is_encoder(codec)) {
-            if (codec->type == AVMEDIA_TYPE_AUDIO) {
-                if (!codec->sample_fmts) {
-                    av_log(NULL, AV_LOG_FATAL, "Encoder %s is missing the sample_fmts field\n", codec->name);
-                    ret = 1;
-                }
-            }
-        }
-    }
-    return ret;
-}
-#endif /* TEST */

@@ -358,6 +358,7 @@ Filters:
   af_compand.c                          Paul B Mahol
   af_firequalizer.c                     Muhammad Faiz
   af_ladspa.c                           Paul B Mahol
+  af_loudnorm.c                         Kyle Swanson
   af_pan.c                              Nicolas George
   af_sidechaincompress.c                Paul B Mahol
   af_silenceremove.c                    Paul B Mahol
@@ -502,6 +503,7 @@ Muxers/Demuxers:
   rtpdec_hevc.*, rtpenc_hevc.*          Thomas Volkert
   rtpdec_mpa_robust.*                   Gilles Chanteperdrix
   rtpdec_asf.*                          Ronald S. Bultje
+  rtpdec_vc2hq.*, rtpenc_vc2hq.*        Thomas Volkert
   rtpdec_vp9.c                          Thomas Volkert
   rtpenc_mpv.*, rtpenc_aac.*            Martin Storsjo
   rtsp.c                                Luca Barbato
