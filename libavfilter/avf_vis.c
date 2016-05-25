@@ -373,8 +373,11 @@ static void vis_shaking_center_bars(VisContext *s, AVFrame *out, double frequenc
             bar_height = frequencies[bar_index] * height;
 
             for (y = mid_y - bar_height / 2; y < mid_y + bar_height / 2; y++) {
-                variation_x = pow(bass_average, 3) * max_variation_x * sin(frame_index);
-                variation_y = pow(bass_average, 3) * max_variation_y * sin(frame_index);
+                // Temporarily disabled shaking:
+//                variation_x = pow(bass_average, 3) * max_variation_x * sin(frame_index);
+//                variation_y = pow(bass_average, 3) * max_variation_y * sin(frame_index);
+                variation_x = 0;
+                variation_y = 0;
 
                 plot(s, out, x + variation_x, y + variation_y, color);
             }
