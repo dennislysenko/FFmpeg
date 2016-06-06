@@ -264,7 +264,7 @@ static struct addrinfo *udp_resolve_host(URLContext *h,
         res = NULL;
         av_log(h, AV_LOG_ERROR, "getaddrinfo(%s, %s): %s\n",
                node ? node : "unknown",
-               service ? service : "unknown",
+               service,
                gai_strerror(error));
     }
 
@@ -605,7 +605,9 @@ static void *circular_buffer_task_tx( void *_URLContext)
             } else {
                 ret = ff_neterrno();
                 if (ret != AVERROR(EAGAIN) && ret != AVERROR(EINTR)) {
+                    pthread_mutex_lock(&s->mutex);
                     s->circular_buffer_error = ret;
+                    pthread_mutex_unlock(&s->mutex);
                     return NULL;
                 }
             }
@@ -1099,7 +1101,6 @@ static int udp_close(URLContext *h)
 #if HAVE_PTHREAD_CANCEL
     // Request close once writing is finished
     if (s->thread_started && !(h->flags & AVIO_FLAG_READ)) {
-        int ret;
         pthread_mutex_lock(&s->mutex);
         s->close_req = 1;
         pthread_cond_signal(&s->cond);
