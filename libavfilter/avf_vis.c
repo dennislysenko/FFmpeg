@@ -452,44 +452,32 @@ static int plot_freqs(AVFilterLink *inlink, AVFrame *in)
             }
         }
 
-        // gradual falling:
-        /*
-        s->heights[i] -= 0.01;
-        if (y > s->heights[i])
-            s->heights[i] = y;
-            */
-
-        // averaging to make it more friendly:
-        /*
-        s->heights[i] = (s->heights[i] + y) / 2;
-         */
-
         // Getting it onto a more moving scale
         if (y == 0)
             y = 0;
         else
             y = av_clipf(logf((float) y * 256.0f) / 8.0f, 0, 1);
 
-        // Making it centered and less drastic
-//            y = (y * 0.5f) + 0.25f;
+        if (s->frame_index > 0) {
+            // Making it less drastic, giving it some kind of velocity
+            velocity = 0;
+            old_velocity = s->velocities[i];
+            old_height = s->heights[i];
+            diff = y - s->heights[i];
 
-        // Making it less drastic, giving it some kind of velocity
-        velocity = 0;
-        old_velocity = s->velocities[i];
-        old_height = s->heights[i];
-        diff = y - s->heights[i];
+            velocity = FFSIGN(diff) * fabs(diff * 0.7);
 
-        velocity = FFSIGN(diff) * fabs(diff * 0.7);
+            if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
+                velocity = velocity * 0.1;
+            }
 
-        if (FFSIGN(old_velocity) != FFSIGN(velocity)) {
-            velocity = velocity * 0.1;
+            s->velocities[i] = velocity;
+            s->heights[i] += velocity;
+            s->heights[i] = av_clipd(s->heights[i], 0, 1);
+        } else {
+            s->velocities[i] = y - s->heights[i];
+            s->heights[i] = y;
         }
-
-        s->velocities[i] = velocity;
-        s->heights[i] += velocity;
-        s->heights[i] = av_clipd(s->heights[i], 0, 1);
-//        s->velocities[i] = y - s->heights[i];
-//        s->heights[i] = y;
     }
 
 
