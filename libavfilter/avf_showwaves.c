@@ -85,6 +85,8 @@ typedef struct {
 #define OFFSET(x) offsetof(ShowWavesContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
+#define SHOWWAVES_THICK_RADIUS 12
+
 static const AVOption showwaves_options[] = {
     { "size", "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "600x240"}, 0, 0, FLAGS },
     { "s",    "set video size", OFFSET(w), AV_OPT_TYPE_IMAGE_SIZE, {.str = "600x240"}, 0, 0, FLAGS },
@@ -219,8 +221,8 @@ static void draw_sample_thick_rgba(uint8_t *buf, int height, int linesize,
     int y;
 
     if (h >= 0 && h < height) {
-        minH = av_clip(h - 3, 0, height-1);
-        maxH = av_clip(h + 3, 0, height-1);
+        minH = av_clip(h - SHOWWAVES_THICK_RADIUS, 0, height-1);
+        maxH = av_clip(h + SHOWWAVES_THICK_RADIUS, 0, height-1);
 
         for (y = minH; y < maxH; y++) {
             buf[y * linesize + 0] += color[0];
@@ -336,8 +338,8 @@ static void draw_sample_thick_gray(uint8_t *buf, int height, int linesize,
     int y;
 
     if (h >= 0 && h < height) {
-        minH = av_clip(h - 3, 0, height-1);
-        maxH = av_clip(h + 3, 0, height-1);
+        minH = av_clip(h - SHOWWAVES_THICK_RADIUS, 0, height-1);
+        maxH = av_clip(h + SHOWWAVES_THICK_RADIUS, 0, height-1);
 
         for (y = minH; y < maxH; y++) {
             buf[y * linesize] += color[0];
