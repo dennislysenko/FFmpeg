@@ -1,4 +1,4 @@
-sudo apt install make gcc yasm libass-dev libtheora-dev libvorbis-dev 
+sudo apt install make gcc yasm libass-dev libtheora-dev libvorbis-dev libssl-dev 
 
 echo "If you haven't already, follow this tutorial to build libx264: https://serverok.in/error-x264_bit_depth-undeclared"
 
